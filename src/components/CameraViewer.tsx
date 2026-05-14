@@ -19,10 +19,17 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
 
   useEffect(() => {
     if (!camera) return;
+    // No feed URL → mark unavailable immediately, skip the broken <img> render.
+    if (!camera.feed_url) {
+      setImageUrl('');
+      setLoading(false);
+      setError(true);
+      return;
+    }
     setLoading(true);
     setError(false);
     // Add cache-busting for live feeds
-    const url = camera.feed_url?.includes('?')
+    const url = camera.feed_url.includes('?')
       ? `${camera.feed_url}&_t=${Date.now()}`
       : `${camera.feed_url}?_t=${Date.now()}`;
     setImageUrl(url);
@@ -101,7 +108,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : imageUrl ? (
               <img
                 key={refreshKey}
                 src={imageUrl}
@@ -110,7 +117,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
                 onLoad={() => setLoading(false)}
                 onError={() => { setLoading(false); setError(true); }}
               />
-            )}
+            ) : null}
 
             {/* Live indicator */}
             {!error && !loading && (

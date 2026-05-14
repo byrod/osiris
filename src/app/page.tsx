@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layers, BarChart3, Newspaper, Search, Share2, Map as MapIcon, X, Globe, MapPinned, Radar, Satellite, Moon, ExternalLink, AlertTriangle } from 'lucide-react';
+import { Layers, BarChart3, Newspaper, Search, Share2, Map as MapIcon, X, Globe, MapPinned, Satellite, Moon, ExternalLink, AlertTriangle } from 'lucide-react';
 import LayerPanel from '@/components/LayerPanel';
 import IntelFeed from '@/components/IntelFeed';
 import MarketsPanel from '@/components/MarketsPanel';
@@ -15,7 +15,6 @@ import SharePanel from '@/components/SharePanel';
 import ViewPresets from '@/components/ViewPresets';
 import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import GlobalStatusBar from '@/components/GlobalStatusBar';
-import OsintPanel from '@/components/OsintPanel';
 import LiveAlerts from '@/components/LiveAlerts';
 
 const OsirisMap = dynamic(() => import('@/components/OsirisMap'), { ssr: false });
@@ -47,7 +46,8 @@ export default function Dashboard() {
 
   const [backendStatus, setBackendStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [mapView, setMapView] = useState({ zoom: 2.5, latitude: 20 });
-  const [flyToLocation, setFlyToLocation] = useState<{ lat: number; lng: number; ts: number } | null>(null);
+  const [flyToLocation, setFlyToLocation] = useState<{ lat: number; lng: number; ts: number; zoom?: number } | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [mouseCoords, setMouseCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locationLabel, setLocationLabel] = useState('');
   const [regionDossier, setRegionDossier] = useState<any>(null);
@@ -60,7 +60,7 @@ export default function Dashboard() {
   const [showMarkets, setShowMarkets] = useState(true);
   const [showIntel, setShowIntel] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [mobilePanel, setMobilePanel] = useState<'layers'|'markets'|'intel'|'search'|'recon'|null>(null);
+  const [mobilePanel, setMobilePanel] = useState<'layers'|'markets'|'intel'|'search'|null>(null);
   const [mapProjection, setMapProjection] = useState<'globe'|'mercator'>('globe');
   const [mapStyle, setMapStyle] = useState<'dark'|'satellite'>('dark');
 
@@ -83,10 +83,13 @@ export default function Dashboard() {
     earthquakes: true,
     fires: false,
     weather: false,
+    air_quality_eu: false,
+    vigicrues: false,
     infrastructure: false,
     global_incidents: false,
     gps_jamming: false,
     day_night: true,
+    my_position: false,
   });
   const [liveFeedUrl, setLiveFeedUrl] = useState<string | null>(null);
   const [liveFeedName, setLiveFeedName] = useState('');
@@ -102,6 +105,35 @@ export default function Dashboard() {
 
   // Splash screen
   useEffect(() => { setTimeout(() => setShowSplash(false), 2500); }, []);
+
+  // My Position toggle — requests geolocation and renders accuracy halo.
+  // Resets the toggle to false if permission is denied or geolocation is unsupported.
+  useEffect(() => {
+    if (!activeLayers.my_position) {
+      setUserLocation(null);
+      return;
+    }
+    if (!navigator.geolocation) {
+      console.warn('Geolocation unsupported');
+      setActiveLayers(prev => ({ ...prev, my_position: false }));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        setUserLocation({ lat: latitude, lng: longitude, accuracy });
+        // First fix → fly to that position with an accuracy-aware zoom
+        const km = accuracy / 1000;
+        const z = km < 1 ? 13 : km < 5 ? 11 : km < 20 ? 10 : km < 60 ? 8 : 7;
+        setFlyToLocation({ lat: latitude, lng: longitude, ts: Date.now(), zoom: z });
+      },
+      (err) => {
+        console.warn('Geolocation error:', err.message);
+        setActiveLayers(prev => ({ ...prev, my_position: false }));
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
+    );
+  }, [activeLayers.my_position]);
 
   // URL state: parse on mount
   useEffect(() => {
@@ -265,10 +297,17 @@ export default function Dashboard() {
       fetchEndpoint('/api/fires');
       layerFetchedRef.current.add('fires');
     }
-    // CCTV
+    // CCTV — fetch UK + Europe in parallel and merge into data.cameras
     if (activeLayers.cctv && !layerFetchedRef.current.has('cctv')) {
-      fetchEndpoint('/api/cctv?region=uk');
       layerFetchedRef.current.add('cctv');
+      Promise.all([
+        fetch('/api/cctv?region=uk').then(r => r.ok ? r.json() : { cameras: [] }).catch(() => ({ cameras: [] })),
+        fetch('/api/cctv?region=europe').then(r => r.ok ? r.json() : { cameras: [] }).catch(() => ({ cameras: [] })),
+      ]).then(([uk, eu]) => {
+        const cameras = [...(uk.cameras || []), ...(eu.cameras || [])];
+        dataRef.current = { ...dataRef.current, cameras };
+        setDataVersion(v => v + 1);
+      });
     }
     // Maritime
     if (activeLayers.maritime && !layerFetchedRef.current.has('maritime')) {
@@ -280,10 +319,16 @@ export default function Dashboard() {
       fetchEndpoint('/api/live-news', d => ({ live_feeds: d.feeds }));
       layerFetchedRef.current.add('live_news');
     }
-    // Weather
+    // Weather (NASA EONET global + Météo-France vigilance)
     if (activeLayers.weather && !layerFetchedRef.current.has('weather')) {
       fetchEndpoint('/api/weather', d => ({ weather_events: d.events }));
+      fetchEndpoint('/api/vigilance-meteo', d => ({ meteo_vigilance: d.alerts }));
       layerFetchedRef.current.add('weather');
+    }
+    // Vigicrues (French flood vigilance)
+    if (activeLayers.vigicrues && !layerFetchedRef.current.has('vigicrues')) {
+      fetchEndpoint('/api/vigicrues', d => ({ vigicrues: d.features }));
+      layerFetchedRef.current.add('vigicrues');
     }
     // Infrastructure
     if (activeLayers.infrastructure && !layerFetchedRef.current.has('infrastructure')) {
@@ -325,11 +370,14 @@ export default function Dashboard() {
 
   const totalFlights = (data.commercial_flights?.length||0)+(data.private_flights?.length||0)+(data.private_jets?.length||0)+(data.military_flights?.length||0);
 
-  // Dynamic Threat Level based on active global incidents
-  const threatScore = (data.earthquakes?.filter((e: any) => e.magnitude >= 5).length || 0)
-    + (data.weather_events?.filter((w: any) => w.severity === 'high').length || 0) * 2
-    + (data.gdelt?.length || 0) * 0.1
-    + (data.fires?.length || 0) * 0.01;
+  // Dynamic Threat Level based on active global incidents.
+  // Each domain contribution is capped so that a single noisy feed (GDELT, FIRMS)
+  // cannot saturate the score by itself — CRITICAL requires multi-domain stress.
+  const threatScore =
+      Math.min(5, (data.earthquakes?.filter((e: any) => e.magnitude >= 5).length || 0))
+    + Math.min(4, (data.weather_events?.filter((w: any) => w.severity === 'high').length || 0) * 2)
+    + Math.min(3, (data.gdelt?.length || 0) * 0.05)
+    + Math.min(2, (data.fires?.length || 0) * 0.005);
   const threatLevel = threatScore >= 10 ? 'CRITICAL' : threatScore >= 5 ? 'HIGH' : threatScore >= 2 ? 'ELEVATED' : 'NOMINAL';
   const threatColor = threatLevel === 'CRITICAL' ? '#FF1744' : threatLevel === 'HIGH' ? '#FF9500' : threatLevel === 'ELEVATED' ? '#FFD700' : '#00E676';
 
@@ -355,7 +403,7 @@ export default function Dashboard() {
         <OsirisMap data={data} activeLayers={activeLayers} projection={mapProjection} mapStyle={mapStyle === 'satellite' ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' : 'dark'} onEntityClick={(entity) => {
           if (entity?.type === 'cctv') setActiveCamera(entity);
           if (entity?.type === 'live_news' && entity.url) { setLiveFeedUrl(entity.url); setLiveFeedName(entity.name); }
-        }} onMouseCoords={handleMouseCoords} onRightClick={handleRightClick} onViewStateChange={setMapView} flyToLocation={flyToLocation} />
+        }} onMouseCoords={handleMouseCoords} onRightClick={handleRightClick} onViewStateChange={setMapView} flyToLocation={flyToLocation} userLocation={userLocation} />
       </ErrorBoundary>
 
       {/* ── MAP VIEW CONTROLS (3D/2D + SATELLITE TOGGLE) ── */}
@@ -436,7 +484,7 @@ export default function Dashboard() {
 
 
 
-      {/* ── LEFT HUD (desktop): Layers + Stats + Markets + Intel ── */}
+      {/* ── LEFT HUD (desktop): Layers + Stats + Presets ── */}
       <div className="desktop-panel absolute left-5 top-20 bottom-24 w-72 flex flex-col gap-3 z-[200] pointer-events-none overflow-y-auto styled-scrollbar pr-1">
         {showLayers && (
           <>
@@ -450,21 +498,20 @@ export default function Dashboard() {
                 <div><div className="hud-label">NUCLEAR</div><div className="hud-value text-[10px]" style={{ color: '#76FF03' }}>{(data.infrastructure?.length||0)}</div></div>
               </div>
             </motion.div>
-            <ViewPresets onNavigate={(lat, lng, zoom) => { setFlyToLocation({ lat, lng, ts: Date.now() }); setMapView(v => ({ ...v, zoom })); }} />
+            <ViewPresets onNavigate={(lat, lng, zoom) => { setFlyToLocation({ lat, lng, ts: Date.now(), zoom }); setMapView(v => ({ ...v, zoom })); }} />
           </>
         )}
-        {showMarkets && <MarketsPanel data={data} spaceWeather={spaceWeather} />}
-        {showIntel && <IntelFeed data={data} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} />}
       </div>
 
-      {/* ── RIGHT HUD (desktop): Search + RECON + Live Alerts ── */}
-      <div className="desktop-panel absolute right-5 top-20 bottom-24 w-80 flex flex-col gap-3 z-[200] pointer-events-auto overflow-y-auto styled-scrollbar pr-1">
+      {/* ── RIGHT HUD (desktop): Search + Markets + Intel + Live Alerts ── */}
+      <div className="desktop-panel absolute right-5 top-20 bottom-24 w-[364px] flex flex-col gap-3 z-[200] pointer-events-auto overflow-x-hidden overflow-y-auto styled-scrollbar pr-1">
         <div className="flex gap-2 items-start">
           <div className="flex-1"><SearchBar onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} /></div>
           <div className="relative"><SharePanel mapView={mapView} activeLayers={activeLayers} mouseCoords={mouseCoords} /></div>
         </div>
-        <OsintPanel />
         <LiveAlerts data={data} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} onWatchFeed={(url, name) => { setLiveFeedUrl(url); setLiveFeedName(name); }} />
+        {showIntel && <IntelFeed data={data} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} />}
+        {showMarkets && <MarketsPanel data={data} spaceWeather={spaceWeather} />}
       </div>
 
       {/* ── LIVE FEED VIEWER OVERLAY ── */}
@@ -544,13 +591,12 @@ export default function Dashboard() {
                 { id: 'layers' as const, icon: Layers, label: 'LAYERS' },
                 { id: 'markets' as const, icon: BarChart3, label: 'MARKETS' },
                 { id: 'intel' as const, icon: Newspaper, label: 'INTEL' },
-                { id: 'recon' as const, icon: Radar, label: 'RECON' },
                 { id: 'search' as const, icon: Search, label: 'SEARCH' },
               ].map(tab => (
                 <button key={tab.id} onClick={() => setMobilePanel(mobilePanel === tab.id ? null : tab.id)}
                   className={`mobile-nav-btn ${mobilePanel === tab.id ? 'active' : ''}`}>
-                  <tab.icon className={`w-4 h-4 ${tab.id === 'recon' ? 'text-[var(--cyan-primary)]' : ''}`} />
-                  <span className={tab.id === 'recon' ? 'text-[var(--cyan-primary)]' : ''}>{tab.label}</span>
+                  <tab.icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
                 </button>
               ))}
             </div>
@@ -569,7 +615,7 @@ export default function Dashboard() {
                 <div className="px-3 pb-3">
                   <div className="flex items-center justify-between mb-2">
                     <span className="hud-text text-[9px] text-[var(--text-primary)]">
-                      {mobilePanel === 'layers' ? 'LAYERS & STATS' : mobilePanel === 'markets' ? 'MARKETS & INTEL' : mobilePanel === 'intel' ? 'INTEL FEED' : mobilePanel === 'recon' ? 'OSIRIS RECON' : 'SEARCH'}
+                      {mobilePanel === 'layers' ? 'LAYERS & STATS' : mobilePanel === 'markets' ? 'MARKETS & INTEL' : mobilePanel === 'intel' ? 'INTEL FEED' : 'SEARCH'}
                     </span>
                     <button onClick={() => setMobilePanel(null)} className="text-[var(--text-muted)] p-1"><X className="w-4 h-4" /></button>
                   </div>
@@ -586,7 +632,7 @@ export default function Dashboard() {
                       </div>
                       <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} />
                       <div className="mt-2">
-                        <ViewPresets onNavigate={(lat, lng, zoom) => { setFlyToLocation({ lat, lng, ts: Date.now() }); setMapView(v => ({ ...v, zoom })); setMobilePanel(null); }} />
+                        <ViewPresets onNavigate={(lat, lng, zoom) => { setFlyToLocation({ lat, lng, ts: Date.now(), zoom }); setMapView(v => ({ ...v, zoom })); setMobilePanel(null); }} />
                       </div>
                     </>
                   )}
@@ -596,11 +642,6 @@ export default function Dashboard() {
                     <div className="space-y-2">
                       <SearchBar onLocate={(lat, lng) => { setFlyToLocation({ lat, lng, ts: Date.now() }); setMobilePanel(null); }} />
                       <SharePanel mapView={mapView} activeLayers={activeLayers} mouseCoords={mouseCoords} />
-                    </div>
-                  )}
-                  {mobilePanel === 'recon' && (
-                    <div className="space-y-2">
-                      <OsintPanel isOpen={true} onClose={() => setMobilePanel(null)} isMobile={true} />
                     </div>
                   )}
                 </div>

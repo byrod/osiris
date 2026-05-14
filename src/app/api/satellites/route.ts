@@ -32,11 +32,22 @@ const MISSION_CLASSIFY: Record<string, { mission: string; color: string }> = {
   'FENGYUN': { mission: 'Weather', color: '#87CEEB' },
   'GOES': { mission: 'Weather', color: '#87CEEB' },
   'NOAA': { mission: 'Weather', color: '#87CEEB' },
-  'METEOSAT': { mission: 'Weather', color: '#87CEEB' },
+  'METEOSAT': { mission: 'Weather (EU)', color: '#87CEEB' },
+  'MTG': { mission: 'Weather (EU)', color: '#87CEEB' },
   'LANDSAT': { mission: 'Earth Observation', color: '#90EE90' },
-  'SENTINEL': { mission: 'Earth Observation', color: '#90EE90' },
+  'SENTINEL': { mission: 'Copernicus (EU)', color: '#90EE90' },
+  'COPERNICUS': { mission: 'Copernicus (EU)', color: '#90EE90' },
   'TERRA': { mission: 'Earth Science', color: '#90EE90' },
   'AQUA': { mission: 'Earth Science', color: '#90EE90' },
+  'EARTHCARE': { mission: 'ESA Science', color: '#9C27B0' },
+  'AEOLUS': { mission: 'ESA Science', color: '#9C27B0' },
+  'SWARM': { mission: 'ESA Science', color: '#9C27B0' },
+  'BIOMASS': { mission: 'ESA Science', color: '#9C27B0' },
+  'CRYOSAT': { mission: 'ESA Science', color: '#9C27B0' },
+  'PROBA': { mission: 'ESA Science', color: '#9C27B0' },
+  'EUTELSAT': { mission: 'European Telecom', color: '#FF9800' },
+  'HOTBIRD': { mission: 'European Telecom', color: '#FF9800' },
+  'ASTRA': { mission: 'European Telecom', color: '#FF9800' },
   'HUBBLE': { mission: 'Space Telescope', color: '#FFD700' },
   'JAMES WEBB': { mission: 'Space Telescope', color: '#FFD700' },
 };
@@ -165,6 +176,10 @@ const TLE_SOURCES = [
   { url: 'https://celestrak.org/NORAD/elements/gp.php?GROUP=geodetic&FORMAT=tle', type: 'tle', group: 'geodetic' },
   { url: 'https://celestrak.org/NORAD/elements/gp.php?GROUP=engineering&FORMAT=tle', type: 'tle', group: 'engineering' },
   { url: 'https://celestrak.org/NORAD/elements/gp.php?GROUP=education&FORMAT=tle', type: 'tle', group: 'education' },
+  // ── European-operated telecom & geostationary fleets ──
+  { url: 'https://celestrak.org/NORAD/elements/gp.php?GROUP=geo&FORMAT=tle', type: 'tle', group: 'geo' },
+  { url: 'https://celestrak.org/NORAD/elements/gp.php?GROUP=ses&FORMAT=tle', type: 'tle', group: 'ses' },
+  { url: 'https://celestrak.org/NORAD/elements/gp.php?GROUP=eutelsat&FORMAT=tle', type: 'tle', group: 'eutelsat' },
 ];
 
 async function fetchTLEFromSource(source: typeof TLE_SOURCES[0]): Promise<string | null> {

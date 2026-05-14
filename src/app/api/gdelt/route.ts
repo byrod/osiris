@@ -10,8 +10,9 @@ export async function GET() {
     // GDELT GKG 2.0 — last 24h events with conflict themes
     const url = 'https://api.gdeltproject.org/api/v2/geo/geo?query=conflict%20OR%20protest%20OR%20military%20OR%20attack&mode=PointData&format=GeoJSON&timespan=24h&maxpoints=500';
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(15000),
-      next: { revalidate: 600 }, // Cache 10 min
+      signal: AbortSignal.timeout(20000),
+      cache: 'no-store',
+      headers: { 'User-Agent': 'OSIRIS-Intelligence-Platform/3.4' },
     });
 
     if (!res.ok) {
@@ -41,8 +42,15 @@ export async function GET() {
         'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200',
       },
     });
-  } catch (error) {
-    console.error('GDELT fetch error:', error);
-    return NextResponse.json({ events: [], error: 'Failed to fetch GDELT data' }, { status: 500 });
+  } catch (error: any) {
+    // GDELT API is notoriously slow/flaky — degrade gracefully without polluting logs.
+    const code = error?.cause?.code || error?.code || '';
+    const isNetwork = code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'ETIMEDOUT' || code === 'ENOTFOUND' || error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    if (isNetwork) {
+      console.warn(`GDELT unreachable (${code || error?.name}); returning empty result.`);
+    } else {
+      console.error('GDELT fetch error:', error);
+    }
+    return NextResponse.json({ events: [], error: 'GDELT unreachable' });
   }
 }

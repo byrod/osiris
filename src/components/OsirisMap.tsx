@@ -11,9 +11,25 @@ interface OsirisMapProps {
   onMouseCoords?: (coords: { lat: number; lng: number }) => void;
   onRightClick?: (coords: { lat: number; lng: number }) => void;
   onViewStateChange?: (vs: { zoom: number; latitude: number }) => void;
-  flyToLocation?: { lat: number; lng: number; ts: number } | null;
+  flyToLocation?: { lat: number; lng: number; ts: number; zoom?: number } | null;
+  userLocation?: { lat: number; lng: number; accuracy: number } | null;
   projection?: 'mercator' | 'globe';
   mapStyle?: string;
+}
+
+// Build a polygon approximating a geodesic circle (radius in meters).
+// Used to draw the geolocation accuracy halo around the user's position.
+function geodesicCircle(lat: number, lng: number, radiusMeters: number, segments = 64): [number, number][] {
+  const earth = 6371000;
+  const latRad = (lat * Math.PI) / 180;
+  const ring: [number, number][] = [];
+  for (let i = 0; i <= segments; i++) {
+    const theta = (i / segments) * 2 * Math.PI;
+    const dLat = ((radiusMeters * Math.cos(theta)) / earth) * (180 / Math.PI);
+    const dLng = ((radiusMeters * Math.sin(theta)) / (earth * Math.cos(latRad))) * (180 / Math.PI);
+    ring.push([lng + dLng, lat + dLat]);
+  }
+  return ring;
 }
 
 function computeSolarTerminator(): [number, number][] {
@@ -38,7 +54,7 @@ function computeSolarTerminator(): [number, number][] {
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 
-export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark' }: OsirisMapProps) {
+export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, userLocation, projection = 'globe', mapStyle = 'dark' }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -107,7 +123,7 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
       createDot(map, 'dot-cctv', '#39FF14', 10);
 
       // Sources
-      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','gps-jamming','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','live-news','conflict-zones'];
+      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','gps-jamming','day-night','cctv','fires','weather','vigicrues','meteo-vigilance','infrastructure','maritime','maritime-choke','live-news','conflict-zones','user-location'];
       sources.forEach(s => map.addSource(s, { type: 'geojson', data: EMPTY_FC }));
 
       // ── CONFLICT ZONES — small warning markers (not polygons) ──
@@ -165,6 +181,20 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
       warnYCtx.fillText('!', warnSize/2, warnSize - 4);
       map.addImage('warn-yellow', { width: warnSize, height: warnSize, data: new Uint8Array(warnYCtx.getImageData(0, 0, warnSize, warnSize).data) });
 
+      // ── User position (geolocation) — accuracy ring + center dot ──
+      map.addLayer({ id: 'user-loc-accuracy', type: 'fill', source: 'user-location', filter: ['==', '$type', 'Polygon'], paint: {
+        'fill-color': '#00E5FF', 'fill-opacity': 0.10,
+      }});
+      map.addLayer({ id: 'user-loc-outline', type: 'line', source: 'user-location', filter: ['==', '$type', 'Polygon'], paint: {
+        'line-color': '#00E5FF', 'line-opacity': 0.55, 'line-width': 1.5, 'line-dasharray': [2, 2],
+      }});
+      map.addLayer({ id: 'user-loc-center', type: 'circle', source: 'user-location', filter: ['==', '$type', 'Point'], paint: {
+        'circle-radius': 7,
+        'circle-color': '#00E5FF',
+        'circle-stroke-color': '#FFFFFF', 'circle-stroke-width': 2,
+        'circle-opacity': 0.95,
+      }});
+
       map.addLayer({ id: 'conflict-icons', type: 'symbol', source: 'conflict-zones', layout: {
         'icon-image': ['match', ['get','severity'], 'war','warn-icon', 'high','warn-orange', 'warn-yellow'],
         'icon-size': ['interpolate',['linear'],['zoom'], 1,0.6, 4,0.8, 8,1],
@@ -181,6 +211,23 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
 
       // Day/Night
       map.addLayer({ id: 'day-night-fill', type: 'fill', source: 'day-night', paint: { 'fill-color': '#000022', 'fill-opacity': 0.35 }});
+
+      // ── Copernicus CAMS — European Air Quality PM2.5 (WMS raster overlay) ──
+      // Public ECMWF endpoint, no inscription. Layer covers EU+Med, refreshed daily.
+      map.addSource('cams-pm25', {
+        type: 'raster',
+        tiles: [
+          'https://eccharts.ecmwf.int/wms/?token=public&service=WMS&request=GetMap&version=1.3.0&layers=composition_europe_pm2p5_forecast_surface&styles=&format=image/png&transparent=true&height=256&width=256&crs=EPSG:3857&bbox={bbox-epsg-3857}',
+        ],
+        tileSize: 256,
+        attribution: 'Copernicus CAMS · ECMWF',
+      });
+      map.addLayer({
+        id: 'cams-pm25-layer',
+        type: 'raster',
+        source: 'cams-pm25',
+        paint: { 'raster-opacity': 0.55, 'raster-fade-duration': 300 },
+      });
 
       // Earthquakes
       map.addLayer({ id: 'eq-circles', type: 'circle', source: 'earthquakes', paint: {
@@ -241,6 +288,40 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
         'text-field': ['get','title'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
         'text-offset': [0, 2], 'text-max-width': 14, 'text-allow-overlap': false,
       }, paint: { 'text-color': '#E040FB', 'text-halo-color': '#000', 'text-halo-width': 1, 'text-opacity': 0.8 }});
+
+      // Vigicrues — Flood vigilance river sections (line, color by level)
+      const vigiColor = ['match', ['get','level'], 1,'#00E676', 2,'#FFD700', 3,'#FF9500', 4,'#FF1744', '#29B6F6'] as any;
+      map.addLayer({ id: 'vigi-glow', type: 'line', source: 'vigicrues', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: {
+        'line-color': vigiColor,
+        'line-width': ['interpolate',['linear'],['zoom'], 2,5, 4,9, 6,14, 10,22],
+        'line-opacity': 0.35, 'line-blur': 3,
+      }});
+      map.addLayer({ id: 'vigi-line', type: 'line', source: 'vigicrues', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: {
+        'line-color': vigiColor,
+        'line-width': ['interpolate',['linear'],['zoom'], 2,2, 4,3.5, 6,5, 10,8],
+        'line-opacity': 0.95,
+      }});
+      map.addLayer({ id: 'vigi-label', type: 'symbol', source: 'vigicrues', minzoom: 4, filter: ['>=',['get','level'],2], layout: {
+        'symbol-placement': 'line', 'text-field': ['get','name'], 'text-size': 10,
+        'text-font': ['Open Sans Bold'], 'text-allow-overlap': false,
+      }, paint: { 'text-color': vigiColor, 'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.95 }});
+
+      // Météo-France Vigilance — department-level weather alerts (color by max level)
+      const meteoColor = ['match', ['get','level'], 2,'#FFD700', 3,'#FF9500', 4,'#FF1744', '#FF9500'] as any;
+      map.addLayer({ id: 'meteo-glow', type: 'circle', source: 'meteo-vigilance', paint: {
+        'circle-radius': ['interpolate',['linear'],['zoom'], 2,10, 4,18, 6,28, 10,44],
+        'circle-color': meteoColor, 'circle-opacity': 0.18, 'circle-blur': 1,
+      }});
+      map.addLayer({ id: 'meteo-dots', type: 'circle', source: 'meteo-vigilance', paint: {
+        'circle-radius': ['interpolate',['linear'],['zoom'], 2,4, 4,7, 6,11, 10,18],
+        'circle-color': meteoColor, 'circle-opacity': 0.92,
+        'circle-stroke-width': 2, 'circle-stroke-color': meteoColor, 'circle-stroke-opacity': 0.55,
+      }});
+      map.addLayer({ id: 'meteo-label', type: 'symbol', source: 'meteo-vigilance', minzoom: 4, layout: {
+        'text-field': ['concat', ['get','code'], ' — ', ['get','level_label']],
+        'text-size': 10, 'text-font': ['Open Sans Bold'],
+        'text-offset': [0, 1.6], 'text-allow-overlap': false,
+      }, paint: { 'text-color': meteoColor, 'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.95 }});
 
       // Nuclear Infrastructure
       map.addLayer({ id: 'infra-glow', type: 'circle', source: 'infrastructure', paint: {
@@ -373,12 +454,21 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });
 
-    // ── CCTV (opens CameraViewer panel) ──
+    // ── CCTV (opens CameraViewer for image feeds, external tab for page links) ──
     map.on('click', 'cctv-dots', e => {
       if (!e.features?.length) return;
       const p = e.features[0].properties as any;
       const coords = (e.features[0].geometry as any).coordinates;
-      // Emit the camera data so the CameraViewer opens
+      const feedUrl: string = p.feed_url || '';
+      // Curated webcams (OT pages, Sytadin, etc.) are HTML pages, not direct JPGs.
+      // Open them externally instead of forcing the in-app image viewer to fail.
+      const isImage = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(feedUrl);
+      if (feedUrl && !isImage) {
+        window.open(feedUrl, '_blank', 'noopener,noreferrer');
+        map.flyTo({ center: coords, zoom: Math.max(map.getZoom(), 13), duration: 1000 });
+        return;
+      }
+      // Otherwise emit the camera data so the in-app CameraViewer opens
       onEntityClick?.({
         type: 'cctv',
         id: p.id,
@@ -386,27 +476,28 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
         city: p.city,
         country: p.country,
         source: p.source,
-        feed_url: p.feed_url,
+        feed_url: feedUrl,
         lat: coords[1],
         lng: coords[0],
       });
-      // Also fly to the camera
       map.flyTo({ center: coords, zoom: Math.max(map.getZoom(), 13), duration: 1000 });
     });
 
-    // ── Earthquakes (with USGS link) ──
+    // ── Earthquakes (USGS + EMSC merged, source-aware link) ──
     map.on('click', 'eq-circles', e => {
       if (!e.features?.length) return;
       const p = e.features[0].properties as any;
       const coords = (e.features[0].geometry as any).coordinates;
+      const src = p.source || 'USGS';
+      const url = p.url || `https://earthquake.usgs.gov/earthquakes/eventpage/${p.source_id||p.id||''}`;
       popup(coords, `<div style="${pStyle}border:1px solid rgba(255,149,0,0.3);">
         <div style="color:#FF9500;font-size:14px;font-weight:700;margin-bottom:4px;">M${p.magnitude} EARTHQUAKE</div>
-        <div style="font-size:9px;color:#E8E6E0;margin-bottom:8px;">${p.place||'Unknown location'}</div>
+        <div style="font-size:9px;color:#E8E6E0;margin-bottom:8px;">${p.place||'Unknown location'} · <span style="color:#FFD700;">${src}</span></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:9px;">
-          <div><span style="color:#5C5A54;">DEPTH</span><br/><span style="color:#E8E6E0;">${p.depth||'—'}km</span></div>
+          <div><span style="color:#5C5A54;">DEPTH</span><br/><span style="color:#E8E6E0;">${p.depth?Number(p.depth).toFixed(1):'—'}km</span></div>
           <div><span style="color:#5C5A54;">COORDS</span><br/><span style="color:#E8E6E0;">${coords[1].toFixed(3)}, ${coords[0].toFixed(3)}</span></div>
         </div>
-        <a href="https://earthquake.usgs.gov/earthquakes/eventpage/${p.id||''}" target="_blank" style="${linkStyle}color:#FF9500;border:1px solid rgba(255,149,0,0.4);background:rgba(255,149,0,0.1);">📊 USGS DETAILS</a>
+        <a href="${url}" target="_blank" style="${linkStyle}color:#FF9500;border:1px solid rgba(255,149,0,0.4);background:rgba(255,149,0,0.1);">📊 ${src} DETAILS</a>
       </div>`);
     });
 
@@ -456,9 +547,42 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
     });
 
     // Cursor handlers for all clickable layers
-    ['cctv-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots'].forEach(layer => {
+    ['cctv-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','vigi-line','meteo-dots','infra-dots','maritime-dots','choke-dots','news-dots'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
+    });
+
+    // ── Météo-France Vigilance ──
+    map.on('click', 'meteo-dots', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const coords = (e.features[0].geometry as any).coordinates;
+      const color = p.color || '#FF9500';
+      let phenomena: { name: string; level: number }[] = [];
+      try { phenomena = typeof p.phenomena === 'string' ? JSON.parse(p.phenomena) : (p.phenomena || []); } catch {}
+      const phenList = phenomena
+        .sort((a, b) => b.level - a.level)
+        .map(ph => `<div style="font-size:9px;color:#E8E6E0;margin-top:2px;">• ${ph.name} <span style="color:${color};font-weight:700;">[${ph.level}]</span></div>`)
+        .join('');
+      popup(coords, `<div style="${pStyle}border:1px solid ${color}55;">
+        <div style="color:${color};font-size:13px;font-weight:700;margin-bottom:4px;">⚠️ ${p.name||''} (${p.code||''})</div>
+        <div style="font-size:9px;color:#E8E6E0;margin-bottom:8px;">Vigilance météo · <span style="color:${color};font-weight:700;">${p.level_label||''}</span></div>
+        <div style="margin-bottom:8px;">${phenList || '<div style="font-size:9px;color:#5C5A54;">Aucun phénomène détaillé</div>'}</div>
+        <a href="https://vigilance.meteofrance.fr/" target="_blank" style="${linkStyle}color:${color};border:1px solid ${color}66;background:${color}1a;">🌩️ VIGILANCE.METEOFRANCE.FR</a>
+      </div>`);
+    });
+
+    // ── Vigicrues (French flood vigilance) ──
+    map.on('click', 'vigi-line', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const color = p.color || '#29B6F6';
+      popup(e.lngLat, `<div style="${pStyle}border:1px solid ${color}55;">
+        <div style="color:${color};font-size:13px;font-weight:700;margin-bottom:4px;">💧 ${p.name||'Tronçon'}</div>
+        <div style="font-size:9px;color:#E8E6E0;margin-bottom:8px;">Vigilance crue · <span style="color:${color};font-weight:700;">${p.level_label||'VERT'}</span></div>
+        <div style="font-size:9px;color:#5C5A54;margin-bottom:8px;">Source: Vigicrues / SCHAPI ${p.updated?'· MAJ '+String(p.updated).slice(0,10):''}</div>
+        <a href="https://www.vigicrues.gouv.fr/" target="_blank" style="${linkStyle}color:${color};border:1px solid ${color}66;background:${color}1a;">🌊 VIGICRUES.GOUV.FR</a>
+      </div>`);
     });
 
     // ── Weather Events (NASA EONET) ──
@@ -590,13 +714,15 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
   // Other layers
   useEffect(() => {
     if (!mapReady) return;
-    setGeo('earthquakes', activeLayers.earthquakes && data.earthquakes ? data.earthquakes.map((eq: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [eq.lng, eq.lat] }, properties: { magnitude: eq.magnitude, place: eq.place } })) : []);
+    setGeo('earthquakes', activeLayers.earthquakes && data.earthquakes ? data.earthquakes.map((eq: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [eq.lng, eq.lat] }, properties: { id: eq.id, source: eq.source, source_id: eq.source_id, magnitude: eq.magnitude, depth: eq.depth, place: eq.place, url: eq.url } })) : []);
     setGeo('satellites', activeLayers.satellites && data.satellites ? data.satellites.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { name: s.name, color: s.color, mission: s.mission } })) : []);
     setGeo('gdelt', activeLayers.global_incidents && data.gdelt ? data.gdelt.map((e: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [e.lng, e.lat] }, properties: { name: e.name } })) : []);
     setGeo('gps-jamming', activeLayers.gps_jamming && data.gps_jamming ? data.gps_jamming.map((z: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [z.lng, z.lat] }, properties: { severity: z.severity } })) : []);
     setGeo('cctv', activeLayers.cctv && data.cameras ? data.cameras.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { name: c.name, city: c.city, country: c.country, source: c.source, feed_url: c.feed_url } })) : []);
     setGeo('fires', activeLayers.fires && data.fires ? data.fires.map((f: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [f.lng, f.lat] }, properties: { brightness: f.brightness } })) : []);
     setGeo('weather', activeLayers.weather && data.weather_events ? data.weather_events.map((w: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [w.lng, w.lat] }, properties: { title: w.title, type: w.type, icon: w.icon, severity: w.severity, source: w.source, id: w.id } })) : []);
+    setGeo('vigicrues', activeLayers.vigicrues && data.vigicrues ? data.vigicrues : []);
+    setGeo('meteo-vigilance', activeLayers.weather && data.meteo_vigilance ? data.meteo_vigilance.map((a: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [a.lng, a.lat] }, properties: { id: a.id, code: a.code, name: a.name, level: a.level, level_label: a.level_label, color: a.color, phenomena: JSON.stringify(a.phenomena || []) } })) : []);
     setGeo('infrastructure', activeLayers.infrastructure && data.infrastructure ? data.infrastructure.map((i: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [i.lng, i.lat] }, properties: { name: i.name, city: i.city, country: i.country, status: i.status, reactors: i.reactors, capacityMW: i.capacityMW, owner: i.owner } })) : []);
     setGeo('maritime', activeLayers.maritime && data.maritime_ports ? data.maritime_ports.map((p: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { name: p.name, country: p.country, type: p.type, volume: p.volume, fleet: p.fleet, rank: p.rank } })) : []);
     setGeo('maritime-choke', activeLayers.maritime && data.maritime_chokepoints ? data.maritime_chokepoints.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { name: c.name, traffic: c.traffic, risk: c.risk } })) : []);
@@ -641,6 +767,9 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
     setVis(['cctv-glow','cctv-dots','cctv-label'], activeLayers.cctv);
     setVis(['fires-heat'], activeLayers.fires);
     setVis(['weather-glow','weather-dots','weather-label'], activeLayers.weather);
+    setVis(['cams-pm25-layer'], activeLayers.air_quality_eu);
+    setVis(['vigi-glow','vigi-line','vigi-label'], activeLayers.vigicrues);
+    setVis(['meteo-glow','meteo-dots','meteo-label'], activeLayers.weather);
     setVis(['infra-glow','infra-dots','infra-label'], activeLayers.infrastructure);
     setVis(['maritime-glow','maritime-dots','maritime-label'], activeLayers.maritime);
     setVis(['choke-glow','choke-dots','choke-label'], activeLayers.maritime);
@@ -650,8 +779,21 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
   // Fly-to
   useEffect(() => {
     if (!mapReady || !mapRef.current || !flyToLocation) return;
-    mapRef.current.flyTo({ center: [flyToLocation.lng, flyToLocation.lat], zoom: 8, duration: 2000 });
+    mapRef.current.flyTo({ center: [flyToLocation.lng, flyToLocation.lat], zoom: flyToLocation.zoom ?? 8, duration: 2000 });
   }, [mapReady, flyToLocation]);
+
+  // User location — accuracy ring + center dot
+  useEffect(() => {
+    if (!mapReady) return;
+    if (!userLocation) { setGeo('user-location', []); return; }
+    const { lat, lng, accuracy } = userLocation;
+    const ring = geodesicCircle(lat, lng, accuracy);
+    const accuracyKm = (accuracy / 1000).toFixed(accuracy < 1000 ? 2 : 1);
+    setGeo('user-location', [
+      { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: { accuracy } },
+      { type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { accuracy_km: accuracyKm } },
+    ]);
+  }, [mapReady, userLocation, setGeo]);
 
   // Dynamic projection switching (lightweight — no terrain DEM)
   useEffect(() => {

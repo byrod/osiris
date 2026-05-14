@@ -198,7 +198,7 @@ async function fetchUSEastCameras(): Promise<any[]> {
 // ── EUROPE: Netherlands, Germany, France ──
 async function fetchEuropeCameras(): Promise<any[]> {
   const cams: any[] = [];
-  
+
   // Netherlands Rijkswaterstaat
   try {
     const res = await fetch('https://opendata.ndw.nu/cameras.json', { signal: AbortSignal.timeout(8000) });
@@ -210,6 +210,29 @@ async function fetchEuropeCameras(): Promise<any[]> {
           id: `nl-${cams.length}`, lat: cam.lat, lng: cam.lng,
           name: cam.name || 'NL Camera', city: 'Netherlands', country: 'NL',
           feed_url: cam.imageUrl || '', source: 'RWS',
+        });
+      }
+    }
+  } catch { /* silent */ }
+
+  // Finland Digitraffic — 700+ road/weather cams, GeoJSON, no token
+  try {
+    const res = await fetch('https://tie.digitraffic.fi/api/weathercam/v1/stations', { signal: AbortSignal.timeout(10000) });
+    if (res.ok) {
+      const data = await res.json();
+      for (const feature of (data.features || [])) {
+        const coords = feature.geometry?.coordinates;
+        if (!coords || typeof coords[0] !== 'number' || typeof coords[1] !== 'number') continue;
+        if (feature.properties?.collectionStatus !== 'GATHERING') continue;
+        const preset = feature.properties.presets?.find((p: any) => p.inCollection);
+        if (!preset?.id) continue;
+        cams.push({
+          id: `fi-${preset.id}`,
+          lat: coords[1], lng: coords[0],
+          name: (feature.properties.name || 'Digitraffic').replace(/_/g, ' '),
+          city: 'Finland', country: 'FI',
+          feed_url: `https://weathercam.digitraffic.fi/${preset.id}.jpg`,
+          source: 'Digitraffic FI',
         });
       }
     }

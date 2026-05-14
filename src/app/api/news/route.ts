@@ -12,9 +12,14 @@ const FEEDS: Record<string, string> = {
   NPR: 'https://feeds.npr.org/1004/rss.xml',
   GDACS: 'https://www.gdacs.org/xml/rss.xml',
   NHK: 'https://www3.nhk.or.jp/nhkworld/rss/world.xml',
+  'CERT-FR': 'https://www.cert.ssi.gouv.fr/feed/',
 };
 
-const RISK_KEYWORDS = ['war','missile','strike','attack','crisis','tension','military','conflict','defense','clash','nuclear','invasion','bomb','drone','weapon','sanctions','ceasefire','escalation'];
+const RISK_KEYWORDS = [
+  'war','missile','strike','attack','crisis','tension','military','conflict','defense','clash','nuclear','invasion','bomb','drone','weapon','sanctions','ceasefire','escalation',
+  // cyber — used by CERT-FR / ANSSI bulletins
+  'critique','critical','vulnérabilité','vulnerability','exploit','exploitée','exploitation','ransomware','zero-day','0-day','rce','élévation de privilèges','privilege escalation','breach','compromission',
+];
 
 const KEYWORD_COORDS: Record<string, [number, number]> = {
   'ukraine': [49.487, 31.272], 'kyiv': [50.450, 30.523], 'russia': [61.524, 105.318],

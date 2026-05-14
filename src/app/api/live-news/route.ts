@@ -19,10 +19,16 @@ const LIVE_FEEDS = [
   // ── Europe ──
   { id: 'skynews', name: 'Sky News', city: 'London', country: 'GB', lat: 51.500, lng: -0.118, url: 'https://www.youtube.com/embed/live_stream?channel=UCoMdktPbSTixAyNGwb-UYkQ&autoplay=1&mute=1', category: 'mainstream', language: 'en' },
   { id: 'france24en', name: 'France 24 EN', city: 'Paris', country: 'FR', lat: 48.830, lng: 2.280, url: 'https://www.youtube.com/embed/live_stream?channel=UCQfwfsi5VrQ8yKZ-UWmAEFg&autoplay=1&mute=1', category: 'mainstream', language: 'en' },
+  { id: 'france24fr', name: 'France 24 FR', city: 'Paris', country: 'FR', lat: 48.832, lng: 2.282, url: 'https://www.youtube.com/embed/live_stream?channel=UCCCPCZNChQdGa9EkATeye4g&autoplay=1&mute=1', category: 'mainstream', language: 'fr' },
+  { id: 'bfmtv', name: 'BFM TV', city: 'Paris', country: 'FR', lat: 48.871, lng: 2.319, url: 'https://www.youtube.com/embed/live_stream?channel=UCXwDLMDV86ldKoFVc_g8P0g&autoplay=1&mute=1', category: 'mainstream', language: 'fr' },
+  { id: 'franceinfo', name: 'franceinfo:', city: 'Paris', country: 'FR', lat: 48.853, lng: 2.394, url: 'https://www.youtube.com/embed/live_stream?channel=UCO6K_kkdP-lnSCiO3tPx7WA&autoplay=1&mute=1', category: 'mainstream', language: 'fr' },
   { id: 'dwnews', name: 'DW News', city: 'Berlin', country: 'DE', lat: 52.508, lng: 13.376, url: 'https://www.youtube.com/embed/live_stream?channel=UCknLrEdhRCp1aegoMqRaCZg&autoplay=1&mute=1', category: 'mainstream', language: 'en' },
   { id: 'euronews', name: 'Euronews', city: 'Lyon', country: 'FR', lat: 45.764, lng: 4.836, url: 'https://www.youtube.com/embed/live_stream?channel=UCtUbOIRGKZkW7555n6x6q6g&autoplay=1&mute=1', category: 'mainstream', language: 'en' },
+  { id: 'rtve24h', name: 'RTVE 24 Horas', city: 'Madrid', country: 'ES', lat: 40.394, lng: -3.708, url: 'https://www.youtube.com/embed/live_stream?channel=UC7QZIf0dta-XPXsp9Hv4dTw&autoplay=1&mute=1', category: 'mainstream', language: 'es' },
+  { id: 'rainews24', name: 'RaiNews24', city: 'Rome', country: 'IT', lat: 41.946, lng: 12.518, url: 'https://www.youtube.com/embed/live_stream?channel=UCxqR9g_1XlnfrqwHK9viwCw&autoplay=1&mute=1', category: 'mainstream', language: 'it' },
   { id: 'trtworld', name: 'TRT World', city: 'Istanbul', country: 'TR', lat: 41.008, lng: 28.978, url: 'https://www.youtube.com/embed/live_stream?channel=UC7fWeaHZQg1p9-4v98L1D1A&autoplay=1&mute=1', category: 'mainstream', language: 'en' },
   { id: 'ukrinform', name: 'UKRINFORM', city: 'Kyiv', country: 'UA', lat: 50.450, lng: 30.523, url: 'https://www.youtube.com/embed/live_stream?channel=UCaDkCK6iFHPE0lmpaYL-WxQ&autoplay=1&mute=1', category: 'conflict', language: 'en' },
+  { id: 'suspilne', name: 'Suspilne Novyny', city: 'Kyiv', country: 'UA', lat: 50.452, lng: 30.526, url: 'https://www.youtube.com/embed/live_stream?channel=UCPY6gj8G7dqwPxg9KwHrj5Q&autoplay=1&mute=1', category: 'conflict', language: 'uk' },
 
   // ── Middle East / Africa ──
   { id: 'aljazeera', name: 'Al Jazeera EN', city: 'Doha', country: 'QA', lat: 25.286, lng: 51.534, url: 'https://www.youtube.com/embed/live_stream?channel=UCNye-wNBqNL5ZzHSJj3l8Bg&autoplay=1&mute=1', category: 'mainstream', language: 'en' },
@@ -51,6 +57,6 @@ export async function GET() {
     categories: ['mainstream', 'government', 'finance', 'conflict', 'state'],
     timestamp: new Date().toISOString(),
   }, {
-    headers: { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=172800' },
+    headers: { 'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=7200' },
   });
 }

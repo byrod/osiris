@@ -67,6 +67,34 @@ export async function GET() {
       }
     }
 
+    // Source 3: Always boost European coverage via FIRMS bbox query.
+    // The global sampling step dilutes Europe (most active fires are in Africa/Amazon),
+    // so we pull EU+Med separately without sampling. Bbox: lng -25..50, lat 30..72.
+    try {
+      const firmsKey = 'd0a624db1bff890120a9bc74e81e4e46';
+      const euRes = await fetch(
+        `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${firmsKey}/VIIRS_SNPP_NRT/-25,30,50,72/1`,
+        { signal: AbortSignal.timeout(15000), headers: { 'User-Agent': 'OSIRIS-Intelligence-Platform/3.4' } },
+      );
+      if (euRes.ok) {
+        const text = await euRes.text();
+        if (text && text.includes('latitude') && text.length > 100) {
+          const euFires = parseCSV(text);
+          // Dedup by ~1km grid (3 decimal degrees of lat+lng) to avoid double markers
+          const seen = new Set(fires.map((f) => `${Math.round(f.lat * 1000)},${Math.round(f.lng * 1000)}`));
+          for (const f of euFires) {
+            const key = `${Math.round(f.lat * 1000)},${Math.round(f.lng * 1000)}`;
+            if (!seen.has(key)) {
+              fires.push(f);
+              seen.add(key);
+            }
+          }
+          if (source) source += '+EU-bbox';
+          else source = 'VIIRS-EU';
+        }
+      }
+    } catch {}
+
     // Source 3: Also pull volcanoes from EONET for richer data
     if (fires.length < 100) {
       try {
