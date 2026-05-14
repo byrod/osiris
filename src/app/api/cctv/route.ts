@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { fetchAsfinagCameras } from './asfinag';
 
 /**
  * OSIRIS — Worldwide CCTV Camera API v2
@@ -237,6 +238,9 @@ async function fetchEuropeCameras(): Promise<any[]> {
       }
     }
   } catch { /* silent */ }
+
+  // Austria ASFINAG motorway webcams
+  cams.push(...await fetchAsfinagCameras());
 
   // Curated European cameras
   const curated = [
