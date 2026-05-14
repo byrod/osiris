@@ -366,8 +366,8 @@ export async function GET(request: Request) {
     } else if (lat !== 0 || lng !== 0) {
       regionsToFetch = getRegionsForBounds(lat, lng, radius);
     } else {
-      // Default: load UK + US-East (fast, reliable)
-      regionsToFetch = ['uk'];
+      // Default: load all regions for global coverage
+      regionsToFetch = Object.keys(REGION_FETCHERS);
     }
 
     const results = await Promise.allSettled(

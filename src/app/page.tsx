@@ -338,17 +338,10 @@ export default function Dashboard() {
       fetchEndpoint('/api/fires');
       layerFetchedRef.current.add('fires');
     }
-    // CCTV — fetch UK + Europe in parallel and merge into data.cameras
+    // CCTV — load all regions globally (UK, US, Canada, Europe incl. ASFINAG, Asia/Pacific)
     if (activeLayers.cctv && !layerFetchedRef.current.has('cctv')) {
+      fetchEndpoint('/api/cctv?region=all');
       layerFetchedRef.current.add('cctv');
-      Promise.all([
-        fetch('/api/cctv?region=uk').then(r => r.ok ? r.json() : { cameras: [] }).catch(() => ({ cameras: [] })),
-        fetch('/api/cctv?region=europe').then(r => r.ok ? r.json() : { cameras: [] }).catch(() => ({ cameras: [] })),
-      ]).then(([uk, eu]) => {
-        const cameras = [...(uk.cameras || []), ...(eu.cameras || [])];
-        dataRef.current = { ...dataRef.current, cameras };
-        setDataVersion(v => v + 1);
-      });
     }
     // Maritime
     if (activeLayers.maritime && !layerFetchedRef.current.has('maritime')) {
