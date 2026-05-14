@@ -102,7 +102,7 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-      center: [20, 20], zoom: 2.5, minZoom: 1.5, maxZoom: 18,
+      center: [10, 50], zoom: 4, minZoom: 1.5, maxZoom: 18,
       attributionControl: false, antialias: true,
       maxPitch: 85,
     });
