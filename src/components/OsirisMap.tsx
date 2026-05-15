@@ -226,7 +226,7 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
         id: 'cams-pm25-layer',
         type: 'raster',
         source: 'cams-pm25',
-        paint: { 'raster-opacity': 0.55, 'raster-fade-duration': 300 },
+        paint: { 'raster-opacity': 0.25, 'raster-fade-duration': 300 },
       });
 
       // Earthquakes

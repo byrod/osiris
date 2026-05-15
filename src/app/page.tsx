@@ -69,6 +69,7 @@ export default function Dashboard() {
   const geocodeCache = useRef<Map<string, string>>(new Map());
   const geocodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastGeocodedPos = useRef<{ lat: number; lng: number } | null>(null);
+  const layersHydratedRef = useRef(false);
 
   // ── DEFAULT: Most layers OFF — fast initial load ──
   const [activeLayers, setActiveLayers] = useState({
@@ -154,8 +155,30 @@ export default function Dashboard() {
         Object.keys(next).forEach(k => { (next as any)[k] = active.includes(k); });
         return next;
       });
+    } else {
+      // No URL override → restore last-session switches from sessionStorage
+      try {
+        const saved = sessionStorage.getItem('osiris.activeLayers');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          setActiveLayers(prev => {
+            const next = { ...prev };
+            Object.keys(next).forEach(k => {
+              if (typeof parsed?.[k] === 'boolean') (next as any)[k] = parsed[k];
+            });
+            return next;
+          });
+        }
+      } catch {}
     }
+    layersHydratedRef.current = true;
   }, []);
+
+  // Persist switches in sessionStorage on every change (after hydration)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !layersHydratedRef.current) return;
+    try { sessionStorage.setItem('osiris.activeLayers', JSON.stringify(activeLayers)); } catch {}
+  }, [activeLayers]);
 
   // URL state: update URL on view change (debounced)
   const urlTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
