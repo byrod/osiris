@@ -105,6 +105,14 @@ export default function Dashboard() {
     return () => clearInterval(iv);
   }, []);
 
+  // "Now" state for data-freshness pill — refreshed every 30s so the pill color drifts
+  // as feeds age, even when nothing else triggers a re-render.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const iv = setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => clearInterval(iv);
+  }, []);
+
   // Splash screen
   useEffect(() => { setTimeout(() => setShowSplash(false), 2500); }, []);
 
@@ -265,7 +273,9 @@ export default function Dashboard() {
         if (res.ok) {
           const json = await res.json();
           const d = transform ? transform(json) : json;
-          dataRef.current = { ...dataRef.current, ...d };
+          const endpointKey = url.split('/api/')[1]?.split('?')[0] || 'unknown';
+          const ts = { ...(dataRef.current._fetchedAt || {}), [endpointKey]: Date.now() };
+          dataRef.current = { ...dataRef.current, ...d, _fetchedAt: ts };
           setDataVersion(v => v + 1);
           setBackendStatus('connected');
         }
@@ -303,7 +313,9 @@ export default function Dashboard() {
         if (res.ok) {
           const json = await res.json();
           const d = transform ? transform(json) : json;
-          dataRef.current = { ...dataRef.current, ...d };
+          const endpointKey = url.split('/api/')[1]?.split('?')[0] || 'unknown';
+          const ts = { ...(dataRef.current._fetchedAt || {}), [endpointKey]: Date.now() };
+          dataRef.current = { ...dataRef.current, ...d, _fetchedAt: ts };
           setDataVersion(v => v + 1);
         }
       } catch {}
@@ -378,7 +390,8 @@ export default function Dashboard() {
           const res = await fetch('/api/epidemic', { cache: 'no-store' });
           if (res.ok) {
             const json = await res.json();
-            dataRef.current = { ...dataRef.current, epidemic: json.records };
+            const ts = { ...(dataRef.current._fetchedAt || {}), epidemic: Date.now() };
+            dataRef.current = { ...dataRef.current, epidemic: json.records, _fetchedAt: ts };
             setDataVersion(v => v + 1);
           }
         } catch {}
@@ -394,7 +407,9 @@ export default function Dashboard() {
         if (res.ok) {
           const json = await res.json();
           const d = transform ? transform(json) : json;
-          dataRef.current = { ...dataRef.current, ...d };
+          const endpointKey = url.split('/api/')[1]?.split('?')[0] || 'unknown';
+          const ts = { ...(dataRef.current._fetchedAt || {}), [endpointKey]: Date.now() };
+          dataRef.current = { ...dataRef.current, ...d, _fetchedAt: ts };
           setDataVersion(v => v + 1);
         }
       } catch {}
@@ -415,15 +430,28 @@ export default function Dashboard() {
   const totalFlights = (data.commercial_flights?.length||0)+(data.private_flights?.length||0)+(data.private_jets?.length||0)+(data.military_flights?.length||0);
 
   // Dynamic Threat Level based on active global incidents.
-  // Each domain contribution is capped so that a single noisy feed (GDELT, FIRMS)
-  // cannot saturate the score by itself — CRITICAL requires multi-domain stress.
+  // Each domain contribution is capped so a single noisy feed cannot saturate the score —
+  // CRITICAL requires genuine multi-domain stress (e.g. major quake + cyclone + outbreaks).
+  // Max possible: 5+4+3+2+3 = 17; calibrated so baseline feeds keep the score in HIGH range.
   const threatScore =
       Math.min(5, (data.earthquakes?.filter((e: any) => e.magnitude >= 5).length || 0))
     + Math.min(4, (data.weather_events?.filter((w: any) => w.severity === 'high').length || 0) * 2)
     + Math.min(3, (data.gdelt?.length || 0) * 0.05)
-    + Math.min(2, (data.fires?.length || 0) * 0.005);
-  const threatLevel = threatScore >= 10 ? 'CRITICAL' : threatScore >= 5 ? 'HIGH' : threatScore >= 2 ? 'ELEVATED' : 'NOMINAL';
+    + Math.min(2, (data.fires?.length || 0) * 0.005)
+    + Math.min(3, (data.epidemic?.filter((e: any) => e.severity === 'CRITICAL' || e.severity === 'HIGH').length || 0) * 0.1);
+  const threatLevel = threatScore >= 13 ? 'CRITICAL' : threatScore >= 7 ? 'HIGH' : threatScore >= 3 ? 'ELEVATED' : 'NOMINAL';
   const threatColor = threatLevel === 'CRITICAL' ? '#FF1744' : threatLevel === 'HIGH' ? '#FF9500' : threatLevel === 'ELEVATED' ? '#FFD700' : '#00E676';
+
+  // Global data-freshness — oldest fetched timestamp across all loaded feeds.
+  const fetchedAtMap = (data._fetchedAt || {}) as Record<string, number>;
+  const oldestFetchMs = Object.values(fetchedAtMap).reduce<number | null>((min, ts) => (min == null || ts < min) ? ts : min, null);
+  const dataAgeMin = oldestFetchMs != null ? (nowTick - oldestFetchMs) / 60_000 : null;
+  const dataFresh: { color: string; label: string } | null = dataAgeMin == null ? null
+    : dataAgeMin < 5   ? { color: '#00E676', label: `${Math.max(1, Math.round(dataAgeMin))}m` }
+    : dataAgeMin < 15  ? { color: '#76FF03', label: `${Math.round(dataAgeMin)}m` }
+    : dataAgeMin < 60  ? { color: '#FFD700', label: `${Math.round(dataAgeMin)}m` }
+    : dataAgeMin < 240 ? { color: '#FF9500', label: `${Math.round(dataAgeMin / 60)}h` }
+    : { color: '#FF3D3D', label: `${Math.round(dataAgeMin / 60)}h+` };
 
   return (
     <main className="fixed inset-0 w-full h-full bg-[var(--bg-void)] overflow-hidden">
@@ -506,12 +534,22 @@ export default function Dashboard() {
       {/* ── TOP-RIGHT STATUS (desktop) ── */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 3 }} className="status-bar-desktop absolute top-3 right-3 md:top-4 md:right-5 z-[200] pointer-events-none flex items-center gap-2 md:gap-4 text-[9px] md:text-[10px] font-mono tracking-widest text-[var(--text-muted)]">
         <span>SYS: <span className={backendStatus === 'connected' ? 'text-[var(--alert-green)]' : 'text-[var(--alert-red)]'}>{backendStatus.toUpperCase()}</span></span>
-        <span className="pointer-events-auto relative group" title="Global Threat Assessment — based on active earthquakes M5+, severe weather, GDELT conflicts, and wildfires">GLOBAL THREAT: <span style={{ color: threatColor, fontWeight: 700 }} className={threatLevel === 'CRITICAL' ? 'animate-threat-flash' : ''}>{threatLevel}</span>
+        <span className="pointer-events-auto relative group" title="Global Threat Assessment — based on active earthquakes M5+, severe weather, GDELT conflicts, wildfires, and epidemic outbreaks">GLOBAL THREAT: <span style={{ color: threatColor, fontWeight: 700 }} className={threatLevel === 'CRITICAL' ? 'animate-threat-flash' : ''}>{threatLevel}</span>
           <span className="absolute bottom-full right-0 mb-2 hidden group-hover:block glass-panel px-3 py-2 text-[9px] text-[var(--text-secondary)] whitespace-nowrap z-[500] pointer-events-none" style={{ borderColor: `${threatColor}40` }}>
-            Global Threat Level — Composite score from earthquakes, severe weather, conflicts & fires
+            Global Threat Level — Composite score from earthquakes, severe weather, conflicts, fires & epidemic outbreaks
           </span>
         </span>
         {spaceWeather && <span className="hidden lg:inline">SOLAR: <span style={{ color: spaceWeather.storm_color, fontWeight: 700 }}>Kp{spaceWeather.kp_index}</span></span>}
+        {dataFresh && (
+          <span
+            className="pointer-events-auto inline-flex items-center gap-1.5"
+            title={oldestFetchMs ? `Oldest feed fetched ${new Date(oldestFetchMs).toLocaleTimeString()}` : ''}
+          >
+            DATA:
+            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: dataFresh.color, boxShadow: `0 0 5px ${dataFresh.color}99` }} />
+            <span style={{ color: dataFresh.color, fontWeight: 700 }}>{dataFresh.label}</span>
+          </span>
+        )}
         <span className="hidden lg:inline">UPTIME: <span className="text-[var(--gold-primary)]">{uptime}</span></span>
         <span>V4.1</span>
       </motion.div>
