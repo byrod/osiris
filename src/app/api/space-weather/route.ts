@@ -33,15 +33,17 @@ export async function GET() {
       kpTimestamp = latest.time_tag || '';
     }
 
-    // Storm level from Kp
+    // Storm level from Kp — aligned with NOAA SWPC G-scale (Kp 5 = G1, Kp 9 = G5).
+    // https://www.swpc.noaa.gov/noaa-scales-explanation
     let stormLevel = 'Quiet';
     let stormColor = '#00E676';
-    if (kpIndex >= 8) { stormLevel = 'Extreme (G5)'; stormColor = '#FF1744'; }
-    else if (kpIndex >= 7) { stormLevel = 'Severe (G4)'; stormColor = '#FF3D3D'; }
-    else if (kpIndex >= 6) { stormLevel = 'Strong (G3)'; stormColor = '#FF9500'; }
-    else if (kpIndex >= 5) { stormLevel = 'Moderate (G2)'; stormColor = '#FFD700'; }
-    else if (kpIndex >= 4) { stormLevel = 'Minor (G1)'; stormColor = '#FFD700'; }
-    else if (kpIndex >= 3) { stormLevel = 'Unsettled'; stormColor = '#D4AF37'; }
+    if (kpIndex >= 9)      { stormLevel = 'Extreme (G5)';  stormColor = '#FF1744'; }
+    else if (kpIndex >= 8) { stormLevel = 'Severe (G4)';   stormColor = '#FF3D3D'; }
+    else if (kpIndex >= 7) { stormLevel = 'Strong (G3)';   stormColor = '#FF9500'; }
+    else if (kpIndex >= 6) { stormLevel = 'Moderate (G2)'; stormColor = '#FFD700'; }
+    else if (kpIndex >= 5) { stormLevel = 'Minor (G1)';    stormColor = '#FFC107'; }
+    else if (kpIndex >= 4) { stormLevel = 'Active';        stormColor = '#D4AF37'; }
+    else if (kpIndex >= 3) { stormLevel = 'Unsettled';     stormColor = '#8BC34A'; }
 
     // Recent alerts
     const alerts: any[] = [];

@@ -123,7 +123,7 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
       createDot(map, 'dot-cctv', '#39FF14', 10);
 
       // Sources
-      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','gps-jamming','day-night','cctv','fires','weather','vigicrues','meteo-vigilance','infrastructure','maritime','maritime-choke','live-news','conflict-zones','user-location'];
+      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','gps-jamming','day-night','cctv','fires','weather','vigicrues','meteo-vigilance','infrastructure','maritime','maritime-choke','live-news','conflict-zones','user-location','epidemic'];
       sources.forEach(s => map.addSource(s, { type: 'geojson', data: EMPTY_FC }));
 
       // ── CONFLICT ZONES — small warning markers (not polygons) ──
@@ -285,7 +285,7 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
         'circle-stroke-width': 2, 'circle-stroke-color': '#E040FB', 'circle-stroke-opacity': 0.4,
       }});
       map.addLayer({ id: 'weather-label', type: 'symbol', source: 'weather', layout: {
-        'text-field': ['get','title'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
+        'text-field': ['get','type'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
         'text-offset': [0, 2], 'text-max-width': 14, 'text-allow-overlap': false,
       }, paint: { 'text-color': '#E040FB', 'text-halo-color': '#000', 'text-halo-width': 1, 'text-opacity': 0.8 }});
 
@@ -376,6 +376,29 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
         'text-field': ['get','name'], 'text-size': 10, 'text-font': ['Open Sans Bold'],
         'text-offset': [0, 2], 'text-max-width': 14, 'text-allow-overlap': false,
       }, paint: { 'text-color': '#FF9500', 'text-halo-color': '#000', 'text-halo-width': 1, 'text-opacity': 0.9 }});
+
+      // Epidemic surveillance — color by SOURCE (CDC=violet, WHO=cyan, HEALTHMAP=magenta, ECDC=green).
+      // Severity is rendered through radius/opacity so the source-color stays readable.
+      const epiColor = ['match', ['get','source'],
+        'HEALTHMAP','#FF1493',  // bright magenta — global outbreaks (the visible "world" layer)
+        'CDC','#7C4DFF',        // violet — US surveillance
+        'WHO','#00E5FF',        // cyan — global indicators
+        'ECDC','#00E676',       // green — Europe surveillance
+        '#7C4DFF'
+      ] as any;
+      map.addLayer({ id: 'epi-glow', type: 'circle', source: 'epidemic', paint: {
+        'circle-radius': ['interpolate',['linear'],['zoom'], 1,10, 5,16, 10,26],
+        'circle-color': epiColor, 'circle-opacity': 0.14, 'circle-blur': 1,
+      }});
+      map.addLayer({ id: 'epi-dots', type: 'circle', source: 'epidemic', paint: {
+        'circle-radius': ['interpolate',['linear'],['zoom'], 1,4, 5,7, 10,11],
+        'circle-color': epiColor, 'circle-opacity': 0.9,
+        'circle-stroke-width': 2, 'circle-stroke-color': epiColor, 'circle-stroke-opacity': 0.45,
+      }});
+      map.addLayer({ id: 'epi-label', type: 'symbol', source: 'epidemic', minzoom: 4, layout: {
+        'text-field': ['get','disease'], 'text-size': 9, 'text-font': ['Open Sans Regular'],
+        'text-offset': [0, 1.8], 'text-max-width': 14, 'text-allow-overlap': false,
+      }, paint: { 'text-color': epiColor, 'text-halo-color': '#000', 'text-halo-width': 1, 'text-opacity': 0.85 }});
 
       // Live News — broadcast dots
       map.addLayer({ id: 'news-glow', type: 'circle', source: 'live-news', paint: {
@@ -546,8 +569,41 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
       </div>`);
     });
 
+    // ── Epidemic surveillance (CDC + WHO + HEALTHMAP) ──
+    map.on('click', 'epi-dots', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as Record<string, string | number | undefined>;
+      const coords = (e.features[0].geometry as { coordinates: [number, number] }).coordinates;
+      const sev = String(p.severity || 'LOW');
+      // Source-based accent color (matches the layer paint)
+      const srcColors: Record<string, string> = { HEALTHMAP: '#FF1493', CDC: '#7C4DFF', WHO: '#00E5FF', ECDC: '#00E676' };
+      const color = srcColors[String(p.source || '')] || '#7C4DFF';
+      let diseases: string[] = [];
+      try { diseases = typeof p.diseases === 'string' ? JSON.parse(p.diseases) : []; } catch {}
+      const diseaseList = diseases.length > 0
+        ? `<div style="margin-top:8px;border-top:1px solid ${color}33;padding-top:8px;">
+             <div style="color:#5C5A54;font-size:9px;margin-bottom:4px;">DETECTED PATHOGENS (${diseases.length})</div>
+             <div style="display:flex;flex-wrap:wrap;gap:4px;">
+               ${diseases.slice(0, 14).map(name => `<span style="font-size:9px;color:#E8E6E0;background:${color}1a;border:1px solid ${color}44;border-radius:3px;padding:1px 5px;">${name}</span>`).join('')}
+               ${diseases.length > 14 ? `<span style="font-size:9px;color:#5C5A54;padding:1px 5px;">+${diseases.length - 14}</span>` : ''}
+             </div>
+           </div>`
+        : '';
+      popup(coords, `<div style="${pStyle}border:1px solid ${color}55;">
+        <div style="color:${color};font-size:12px;font-weight:700;margin-bottom:6px;">🧬 ${p.disease || 'Surveillance'} · ${p.source || ''}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px;margin-bottom:8px;">
+          <div><span style="color:#5C5A54;font-size:9px;">REGION</span><br/><span style="color:#E8E6E0;">${p.region || '—'}</span></div>
+          <div><span style="color:#5C5A54;font-size:9px;">DATE</span><br/><span style="color:#E8E6E0;">${p.date || '—'}</span></div>
+          <div><span style="color:#5C5A54;font-size:9px;">${p.source === 'HEALTHMAP' ? 'ALERTS' : 'VALUE'}</span><br/><span style="color:${color};font-weight:700;">${p.value ?? '—'}</span></div>
+          <div><span style="color:#5C5A54;font-size:9px;">LEVEL</span><br/><span style="color:${color};font-weight:700;">${sev}</span></div>
+        </div>
+        ${diseaseList}
+        ${p.link ? `<a href="${p.link}" target="_blank" style="${linkStyle}color:${color};border:1px solid ${color}66;background:${color}1a;margin-top:8px;">📊 OPEN SOURCE</a>` : ''}
+      </div>`);
+    });
+
     // Cursor handlers for all clickable layers
-    ['cctv-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','vigi-line','meteo-dots','infra-dots','maritime-dots','choke-dots','news-dots'].forEach(layer => {
+    ['cctv-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','vigi-line','meteo-dots','infra-dots','maritime-dots','choke-dots','news-dots','epi-dots'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });
@@ -727,6 +783,13 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
     setGeo('maritime', activeLayers.maritime && data.maritime_ports ? data.maritime_ports.map((p: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { name: p.name, country: p.country, type: p.type, volume: p.volume, fleet: p.fleet, rank: p.rank } })) : []);
     setGeo('maritime-choke', activeLayers.maritime && data.maritime_chokepoints ? data.maritime_chokepoints.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { name: c.name, traffic: c.traffic, risk: c.risk } })) : []);
     setGeo('live-news', activeLayers.live_news && data.live_feeds ? data.live_feeds.map((f: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [f.lng, f.lat] }, properties: { name: f.name, city: f.city, country: f.country, url: f.url, category: f.category } })) : []);
+    setGeo('epidemic', activeLayers.epidemic && data.epidemic ? data.epidemic
+      .filter((r: any) => Number.isFinite(r.lat) && Number.isFinite(r.lng))
+      .map((r: any) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
+        properties: { source: r.source, disease: r.disease, region: r.region, date: r.date, value: r.value, severity: r.severity || 'LOW', link: r.link, diseases: JSON.stringify(r.diseases || []) },
+      })) : []);
 
     // ── CONFLICT ZONES — center-point warning markers ──
     const CONFLICT_ZONES = [
@@ -774,6 +837,7 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
     setVis(['maritime-glow','maritime-dots','maritime-label'], activeLayers.maritime);
     setVis(['choke-glow','choke-dots','choke-label'], activeLayers.maritime);
     setVis(['news-glow','news-dots','news-label'], activeLayers.live_news);
+    setVis(['epi-glow','epi-dots','epi-label'], activeLayers.epidemic);
   }, [mapReady, activeLayers]);
 
   // Fly-to

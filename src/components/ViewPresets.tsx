@@ -8,18 +8,12 @@ interface ViewPresetsProps {
 }
 
 const PRESETS = [
-  { label: 'GLOBAL', lat: 20, lng: 0, zoom: 2.5 },
-  { label: 'EUROPE', lat: 48, lng: 10, zoom: 4 },
-  { label: 'MIDDLE EAST', lat: 30, lng: 45, zoom: 4.5 },
-  { label: 'EAST ASIA', lat: 35, lng: 120, zoom: 4 },
-  { label: 'AMERICAS', lat: 25, lng: -90, zoom: 3 },
-  { label: 'UKRAINE', lat: 49, lng: 32, zoom: 6 },
-  { label: 'AFRICA', lat: 5, lng: 20, zoom: 3.5 },
-  { label: 'S.E. ASIA', lat: 10, lng: 110, zoom: 4.5 },
-  { label: 'ARCTIC', lat: 75, lng: 0, zoom: 3.5 },
-  { label: 'INDIA', lat: 22, lng: 78, zoom: 4.5 },
-  { label: 'AUSTRALIA', lat: -25, lng: 134, zoom: 4 },
-  { label: 'SUDAN', lat: 15, lng: 30, zoom: 5.5 },
+  { label: 'AFRICA',   lat:   5, lng:   20, zoom: 3.0 },
+  { label: 'AMERICAS', lat:  20, lng:  -80, zoom: 2.3 },
+  { label: 'ARCTIC',   lat:  75, lng:    0, zoom: 2.0 },
+  { label: 'ASIA',     lat:  35, lng:  100, zoom: 3.0 },
+  { label: 'EUROPE',   lat:  50, lng:   15, zoom: 4.0 },
+  { label: 'OCEANIA',  lat:   0, lng:  135, zoom: 2.5 },
 ];
 
 export default function ViewPresets({ onNavigate }: ViewPresetsProps) {

@@ -89,6 +89,7 @@ export default function Dashboard() {
     infrastructure: false,
     global_incidents: false,
     gps_jamming: false,
+    epidemic: false,
     day_night: true,
     my_position: false,
   });
@@ -367,6 +368,21 @@ export default function Dashboard() {
     if (activeLayers.global_incidents && !layerFetchedRef.current.has('gdelt')) {
       fetchEndpoint('/api/gdelt', d => ({ gdelt: d.events }));
       layerFetchedRef.current.add('gdelt');
+    }
+    // Epidemic surveillance (CDC + WHO + HealthMap) — force no-store so the browser doesn't
+    // serve a stale cached payload from an earlier session that predates the HealthMap rollout.
+    if (activeLayers.epidemic && !layerFetchedRef.current.has('epidemic')) {
+      layerFetchedRef.current.add('epidemic');
+      (async () => {
+        try {
+          const res = await fetch('/api/epidemic', { cache: 'no-store' });
+          if (res.ok) {
+            const json = await res.json();
+            dataRef.current = { ...dataRef.current, epidemic: json.records };
+            setDataVersion(v => v + 1);
+          }
+        } catch {}
+      })();
     }
   }, [activeLayers]);
 

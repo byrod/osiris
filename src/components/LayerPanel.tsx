@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import {
   Plane, Satellite, Activity, Globe, Radio, Eye,
   Shield, Sun, AlertTriangle, Camera, Flame,
-  CloudLightning, Radiation, Tv, Anchor, Ship, Droplets, Crosshair, Wind,
+  CloudLightning, Radiation, Tv, Anchor, Ship, Droplets, Crosshair, Wind, Biohazard,
 } from 'lucide-react';
 
 interface LayerPanelProps {
@@ -29,6 +29,7 @@ const LAYER_CONFIG = [
   { key: 'vigicrues', label: 'Flood Alerts (FR)', icon: Droplets, color: '#29B6F6', dataKey: 'vigicrues' },
   { key: 'infrastructure', label: 'Nuclear Facilities', icon: Radiation, color: '#76FF03', dataKey: 'infrastructure' },
   { key: 'global_incidents', label: 'Global Incidents', icon: AlertTriangle, color: '#FF3D3D', dataKey: 'gdelt' },
+  { key: 'epidemic', label: 'Global Epidemic', icon: Biohazard, color: '#7C4DFF', dataKey: 'epidemic' },
   { key: 'gps_jamming', label: 'GPS Jamming', icon: Radio, color: '#FF4444', dataKey: 'gps_jamming' },
   { key: 'day_night', label: 'Day / Night Cycle', icon: Sun, color: '#448AFF', dataKey: null },
   { key: 'my_position', label: 'My Position', icon: Crosshair, color: '#00E5FF', dataKey: null },

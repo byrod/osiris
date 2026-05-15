@@ -23,6 +23,9 @@ export const DATA_SOURCES = {
   WIKIPEDIA: 'https://en.wikipedia.org/api',
   NASA_GIBS: 'https://gibs.earthdata.nasa.gov',
   CARTO_TILES: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+  CDC_SOCRATA: 'https://data.cdc.gov/resource',
+  ECDC_OPENDATA: 'https://opendata.ecdc.europa.eu/covid19',
+  WHO_GHO: 'https://ghoapi.azureedge.net/api',
 } as const;
 
 // Map style URLs
