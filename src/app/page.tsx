@@ -147,37 +147,42 @@ export default function Dashboard() {
       setFlyToLocation({ lat, lng: lon, ts: Date.now() });
       if (!isNaN(zoom)) setMapView(v => ({ ...v, zoom }));
     }
-    const layers = p.get('layers');
-    if (layers) {
-      const active = layers.split(',');
-      setActiveLayers(prev => {
-        const next = { ...prev };
-        Object.keys(next).forEach(k => { (next as any)[k] = active.includes(k); });
-        return next;
-      });
-    } else {
-      // No URL override → restore last-session switches from sessionStorage
-      try {
-        const saved = sessionStorage.getItem('osiris.activeLayers');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          setActiveLayers(prev => {
-            const next = { ...prev };
-            Object.keys(next).forEach(k => {
-              if (typeof parsed?.[k] === 'boolean') (next as any)[k] = parsed[k];
-            });
-            return next;
+    // Layers: localStorage wins over URL (the URL writer auto-fills `layers`,
+    // so it would otherwise always shadow the user's saved switches).
+    // URL `layers` only used as fallback for shared deep-links on a fresh browser.
+    let restored = false;
+    try {
+      const saved = localStorage.getItem('osiris.activeLayers');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setActiveLayers(prev => {
+          const next = { ...prev };
+          Object.keys(next).forEach(k => {
+            if (typeof parsed?.[k] === 'boolean') (next as any)[k] = parsed[k];
           });
-        }
-      } catch {}
+          return next;
+        });
+        restored = true;
+      }
+    } catch {}
+    if (!restored) {
+      const layers = p.get('layers');
+      if (layers) {
+        const active = layers.split(',');
+        setActiveLayers(prev => {
+          const next = { ...prev };
+          Object.keys(next).forEach(k => { (next as any)[k] = active.includes(k); });
+          return next;
+        });
+      }
     }
     layersHydratedRef.current = true;
   }, []);
 
-  // Persist switches in sessionStorage on every change (after hydration)
+  // Persist switches in localStorage on every change (after hydration)
   useEffect(() => {
     if (typeof window === 'undefined' || !layersHydratedRef.current) return;
-    try { sessionStorage.setItem('osiris.activeLayers', JSON.stringify(activeLayers)); } catch {}
+    try { localStorage.setItem('osiris.activeLayers', JSON.stringify(activeLayers)); } catch {}
   }, [activeLayers]);
 
   // URL state: update URL on view change (debounced)
