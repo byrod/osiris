@@ -443,7 +443,10 @@ export default function Dashboard() {
     + Math.min(3, (data.gdelt?.length || 0) * 0.05)
     + Math.min(2, (data.fires?.length || 0) * 0.005)
     + Math.min(3, (data.epidemic?.filter((e: any) => e.severity === 'CRITICAL' || e.severity === 'HIGH').length || 0) * 0.1);
-  const threatLevel = threatScore >= 13 ? 'CRITICAL' : threatScore >= 7 ? 'HIGH' : threatScore >= 3 ? 'ELEVATED' : 'NOMINAL';
+  // Max possible score is 17 (5+4+3+2+3). Thresholds calibrated so CRITICAL
+  // requires near-total saturation across all five domains — not just heavy
+  // GDELT/FIRMS volumes that always run hot.
+  const threatLevel = threatScore >= 16 ? 'CRITICAL' : threatScore >= 11 ? 'HIGH' : threatScore >= 6 ? 'ELEVATED' : 'NOMINAL';
   const threatColor = threatLevel === 'CRITICAL' ? '#FF1744' : threatLevel === 'HIGH' ? '#FF9500' : threatLevel === 'ELEVATED' ? '#FFD700' : '#00E676';
 
   // Global data-freshness — oldest fetched timestamp across all loaded feeds.
