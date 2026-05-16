@@ -65,7 +65,6 @@ export default function Dashboard() {
   const [regionDossier, setRegionDossier] = useState<any>(null);
   const [dossierLoading, setDossierLoading] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
-  const [uptime, setUptime] = useState('00:00:00');
   const [activeCamera, setActiveCamera] = useState<any>(null);
   const [spaceWeather, setSpaceWeather] = useState<any>(null);
   const [showLayers, setShowLayers] = useState(true);
@@ -77,7 +76,6 @@ export default function Dashboard() {
   const [mapStyle, setMapStyle] = useState<'dark'|'satellite'>('dark');
 
   const isMobile = useIsMobile();
-  const startTime = useRef(Date.now());
   const geocodeCache = useRef<Map<string, string>>(new Map());
   const geocodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastGeocodedPos = useRef<{ lat: number; lng: number } | null>(null);
@@ -107,15 +105,6 @@ export default function Dashboard() {
   });
   const [liveFeedUrl, setLiveFeedUrl] = useState<string | null>(null);
   const [liveFeedName, setLiveFeedName] = useState('');
-
-  // Uptime clock
-  useEffect(() => {
-    const iv = setInterval(() => {
-      const e = Math.floor((Date.now() - startTime.current) / 1000);
-      setUptime(`${String(Math.floor(e/3600)).padStart(2,'0')}:${String(Math.floor((e%3600)/60)).padStart(2,'0')}:${String(e%60).padStart(2,'0')}`);
-    }, 1000);
-    return () => clearInterval(iv);
-  }, []);
 
   // "Now" state for data-freshness pill — refreshed every 30s so the pill color drifts
   // as feeds age, even when nothing else triggers a re-render.
@@ -565,8 +554,7 @@ export default function Dashboard() {
             <span style={{ color: dataFresh.color, fontWeight: 700 }}>{dataFresh.label}</span>
           </span>
         )}
-        <span className="hidden lg:inline">UPTIME: <span className="text-[var(--gold-primary)]">{uptime}</span></span>
-        <span>V4.1</span>
+        <span>V5.1</span>
       </motion.div>
 
       {/* ── MOBILE: Compact top status ── */}
