@@ -11,6 +11,7 @@ interface LayerPanelProps {
   data: any;
   activeLayers: Record<string, boolean>;
   setActiveLayers: (fn: (prev: Record<string, boolean>) => Record<string, boolean>) => void;
+  loadingLayers?: Set<string>;
 }
 
 const LAYER_CONFIG = [
@@ -35,7 +36,7 @@ const LAYER_CONFIG = [
   { key: 'my_position', label: 'My Position', icon: Crosshair, color: '#00E5FF', dataKey: null },
 ];
 
-export default function LayerPanel({ data, activeLayers, setActiveLayers }: LayerPanelProps) {
+export default function LayerPanel({ data, activeLayers, setActiveLayers, loadingLayers }: LayerPanelProps) {
   const toggle = (key: string) => setActiveLayers(prev => ({ ...prev, [key]: !prev[key] }));
   const getCount = (dk: string | null): number | null => {
     if (!dk || !data[dk]) return null;
@@ -60,13 +61,14 @@ export default function LayerPanel({ data, activeLayers, setActiveLayers }: Laye
         {LAYER_CONFIG.map((layer) => {
           const Icon = layer.icon;
           const isActive = activeLayers[layer.key];
+          const isLoading = loadingLayers?.has(layer.key) ?? false;
           const count = getCount(layer.dataKey);
           return (
             <button key={layer.key} onClick={() => toggle(layer.key)} className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-all duration-200 ${isActive ? 'bg-[var(--hover-accent)] border border-[var(--border-primary)]' : 'border border-transparent hover:bg-[var(--hover-accent)]'}`}>
               <Icon className="w-4 h-4 flex-shrink-0" style={{ color: isActive ? layer.color : 'var(--text-muted)' }} />
               <span className={`text-[12px] font-mono tracking-wider flex-1 text-left ${isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>{layer.label}</span>
               {count !== null && <span className="text-[10px] font-mono tabular-nums" style={{ color: isActive ? layer.color : 'var(--text-muted)' }}>{count.toLocaleString()}</span>}
-              <div className={`layer-toggle ${isActive ? 'active' : ''}`} />
+              <div className={`layer-toggle ${isActive ? 'active' : ''} ${isLoading ? 'animate-osiris-pulse' : ''}`} />
             </button>
           );
         })}

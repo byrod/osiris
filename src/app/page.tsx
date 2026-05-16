@@ -44,6 +44,18 @@ export default function Dashboard() {
   const [dataVersion, setDataVersion] = useState(0);
   const data = dataRef.current;
 
+  // Layers currently fetching their data, used to pulse the LayerPanel toggle.
+  const [loadingLayers, setLoadingLayers] = useState<Set<string>>(new Set());
+  const markLoading = useCallback((key: string, loading: boolean) => {
+    setLoadingLayers(prev => {
+      if (loading && prev.has(key)) return prev;
+      if (!loading && !prev.has(key)) return prev;
+      const next = new Set(prev);
+      if (loading) next.add(key); else next.delete(key);
+      return next;
+    });
+  }, []);
+
   const [backendStatus, setBackendStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [mapView, setMapView] = useState({ zoom: 2.5, latitude: 20 });
   const [flyToLocation, setFlyToLocation] = useState<{ lat: number; lng: number; ts: number; zoom?: number } | null>(null);
@@ -307,7 +319,9 @@ export default function Dashboard() {
   // ── LAYER-AWARE DATA LOADING — only fetch when layer is toggled ON ──
   const layerFetchedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const fetchEndpoint = async (url: string, transform?: (d: any) => any) => {
+    const fetchEndpoint = async (url: string, transform?: (d: any) => any, layerKeys?: string | string[]) => {
+      const keys = layerKeys ? (Array.isArray(layerKeys) ? layerKeys : [layerKeys]) : [];
+      keys.forEach(k => markLoading(k, true));
       try {
         const res = await fetch(url);
         if (res.ok) {
@@ -319,65 +333,73 @@ export default function Dashboard() {
           setDataVersion(v => v + 1);
         }
       } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
+      finally { keys.forEach(k => markLoading(k, false)); }
     };
 
-    // Flights
+    // Flights — single endpoint fills the 4 sub-categories; pulse only the ones
+    // currently active so the user sees feedback on the switch they just flipped.
     if (activeLayers.flights || activeLayers.military || activeLayers.jets || activeLayers.private) {
       if (!layerFetchedRef.current.has('flights')) {
-        fetchEndpoint('/api/flights');
+        const activeFlightKeys = (['flights','private','jets','military'] as const).filter(k => activeLayers[k]);
+        fetchEndpoint('/api/flights', undefined, activeFlightKeys);
         layerFetchedRef.current.add('flights');
       }
     }
     // Satellites
     if (activeLayers.satellites && !layerFetchedRef.current.has('satellites')) {
-      fetchEndpoint('/api/satellites');
+      fetchEndpoint('/api/satellites', undefined, 'satellites');
       layerFetchedRef.current.add('satellites');
     }
     // Fires
     if (activeLayers.fires && !layerFetchedRef.current.has('fires')) {
-      fetchEndpoint('/api/fires');
+      fetchEndpoint('/api/fires', undefined, 'fires');
       layerFetchedRef.current.add('fires');
     }
     // CCTV — load all regions globally (UK, US, Canada, Europe incl. ASFINAG, Asia/Pacific)
     if (activeLayers.cctv && !layerFetchedRef.current.has('cctv')) {
-      fetchEndpoint('/api/cctv?region=all');
+      fetchEndpoint('/api/cctv?region=all', undefined, 'cctv');
       layerFetchedRef.current.add('cctv');
     }
     // Maritime
     if (activeLayers.maritime && !layerFetchedRef.current.has('maritime')) {
-      fetchEndpoint('/api/maritime', d => ({ maritime_ports: d.ports, maritime_chokepoints: d.chokepoints }));
+      fetchEndpoint('/api/maritime', d => ({ maritime_ports: d.ports, maritime_chokepoints: d.chokepoints }), 'maritime');
       layerFetchedRef.current.add('maritime');
     }
-    // Live News
+    // Live News — curated payload, served instantly
     if (activeLayers.live_news && !layerFetchedRef.current.has('live_news')) {
       fetchEndpoint('/api/live-news', d => ({ live_feeds: d.feeds }));
       layerFetchedRef.current.add('live_news');
     }
-    // Weather (NASA EONET global + Météo-France vigilance)
+    // Weather (NASA EONET global + Météo-France vigilance) — 2 parallel fetches,
+    // keep the pulse until both resolve so the UI doesn't flicker.
     if (activeLayers.weather && !layerFetchedRef.current.has('weather')) {
-      fetchEndpoint('/api/weather', d => ({ weather_events: d.events }));
-      fetchEndpoint('/api/vigilance-meteo', d => ({ meteo_vigilance: d.alerts }));
       layerFetchedRef.current.add('weather');
+      markLoading('weather', true);
+      Promise.all([
+        fetchEndpoint('/api/weather', d => ({ weather_events: d.events })),
+        fetchEndpoint('/api/vigilance-meteo', d => ({ meteo_vigilance: d.alerts })),
+      ]).finally(() => markLoading('weather', false));
     }
     // Vigicrues (French flood vigilance)
     if (activeLayers.vigicrues && !layerFetchedRef.current.has('vigicrues')) {
-      fetchEndpoint('/api/vigicrues', d => ({ vigicrues: d.features }));
+      fetchEndpoint('/api/vigicrues', d => ({ vigicrues: d.features }), 'vigicrues');
       layerFetchedRef.current.add('vigicrues');
     }
     // Infrastructure
     if (activeLayers.infrastructure && !layerFetchedRef.current.has('infrastructure')) {
-      fetchEndpoint('/api/infrastructure', d => ({ infrastructure: d.infrastructure }));
+      fetchEndpoint('/api/infrastructure', d => ({ infrastructure: d.infrastructure }), 'infrastructure');
       layerFetchedRef.current.add('infrastructure');
     }
     // Global Incidents (GDELT)
     if (activeLayers.global_incidents && !layerFetchedRef.current.has('gdelt')) {
-      fetchEndpoint('/api/gdelt', d => ({ gdelt: d.events }));
+      fetchEndpoint('/api/gdelt', d => ({ gdelt: d.events }), 'global_incidents');
       layerFetchedRef.current.add('gdelt');
     }
     // Epidemic surveillance (CDC + WHO + HealthMap) — force no-store so the browser doesn't
     // serve a stale cached payload from an earlier session that predates the HealthMap rollout.
     if (activeLayers.epidemic && !layerFetchedRef.current.has('epidemic')) {
       layerFetchedRef.current.add('epidemic');
+      markLoading('epidemic', true);
       (async () => {
         try {
           const res = await fetch('/api/epidemic', { cache: 'no-store' });
@@ -387,10 +409,10 @@ export default function Dashboard() {
             dataRef.current = { ...dataRef.current, epidemic: json.records, _fetchedAt: ts };
             setDataVersion(v => v + 1);
           }
-        } catch {}
+        } catch {} finally { markLoading('epidemic', false); }
       })();
     }
-  }, [activeLayers]);
+  }, [activeLayers, markLoading]);
 
   // ── LAYER-AWARE POLLING — only poll data for active layers ──
   useEffect(() => {
@@ -563,7 +585,7 @@ export default function Dashboard() {
       <div className="desktop-panel absolute left-5 top-20 bottom-24 w-72 flex flex-col gap-3 z-[200] pointer-events-none overflow-y-auto styled-scrollbar pr-1">
         {showLayers && (
           <>
-            <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} />
+            <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} loadingLayers={loadingLayers} />
             <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.5 }} className="glass-panel px-3 py-2.5 pointer-events-auto">
               <div className="grid grid-cols-5 gap-2 text-center">
                 <div><div className="hud-label">AIRCRAFT</div><div className="hud-value text-[10px] animate-data-pulse">{totalFlights.toLocaleString()}</div></div>
@@ -705,7 +727,7 @@ export default function Dashboard() {
                           <div><div className="hud-label" style={{fontSize:'6px'}}>NUC</div><div className="hud-value text-[9px]" style={{color:'#76FF03'}}>{(data.infrastructure?.length||0)}</div></div>
                         </div>
                       </div>
-                      <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} />
+                      <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} loadingLayers={loadingLayers} />
                       <div className="mt-2">
                         <ViewPresets onNavigate={(lat, lng, zoom) => { setFlyToLocation({ lat, lng, ts: Date.now(), zoom }); setMapView(v => ({ ...v, zoom })); setMobilePanel(null); }} />
                       </div>
