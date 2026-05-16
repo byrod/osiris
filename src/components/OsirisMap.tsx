@@ -485,7 +485,12 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
       const feedUrl: string = p.feed_url || '';
       // Curated webcams (OT pages, Sytadin, etc.) are HTML pages, not direct JPGs.
       // Open them externally instead of forcing the in-app image viewer to fail.
-      const isImage = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(feedUrl);
+      // ASFINAG and other authorities serve JPEGs through a query-string servlet
+      // (no extension), so also accept known image-serving endpoints by host/path.
+      const isImage =
+        /\.(jpe?g|png|gif|webp)(\?|$)/i.test(feedUrl) ||
+        /CamPicServlet/i.test(feedUrl) ||
+        /webcams2?\.asfinag\.at/i.test(feedUrl);
       if (feedUrl && !isImage) {
         window.open(feedUrl, '_blank', 'noopener,noreferrer');
         map.flyTo({ center: coords, zoom: Math.max(map.getZoom(), 13), duration: 1000 });
