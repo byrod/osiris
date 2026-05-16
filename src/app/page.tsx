@@ -252,7 +252,7 @@ export default function Dashboard() {
           setLocationLabel(label);
           lastGeocodedPos.current = coords;
         }
-      } catch {}
+      } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
     }, 3000); // 3s debounce (was 1.5s)
   }, []);
 
@@ -262,7 +262,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`/api/region-dossier?lat=${coords.lat}&lng=${coords.lng}`);
       if (res.ok) setRegionDossier(await res.json());
-    } catch {} finally { setDossierLoading(false); }
+    } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); } finally { setDossierLoading(false); }
   }, []);
 
   // ── PROGRESSIVE DATA LOADING (request-optimized) ──
@@ -292,7 +292,7 @@ export default function Dashboard() {
       try {
         const r = await fetch('/api/space-weather');
         if (r.ok) setSpaceWeather(await r.json());
-      } catch {}
+      } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
     }, 5000);
 
     // Polling — OPTIMIZED intervals to minimize edge requests
@@ -318,7 +318,7 @@ export default function Dashboard() {
           dataRef.current = { ...dataRef.current, ...d, _fetchedAt: ts };
           setDataVersion(v => v + 1);
         }
-      } catch {}
+      } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
     };
 
     // Flights
@@ -405,7 +405,7 @@ export default function Dashboard() {
           dataRef.current = { ...dataRef.current, ...d, _fetchedAt: ts };
           setDataVersion(v => v + 1);
         }
-      } catch {}
+      } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
     };
 
     const intervals: ReturnType<typeof setInterval>[] = [];
