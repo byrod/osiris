@@ -89,13 +89,29 @@ function parseRSSItems(xml: string): any[] {
     };
 
     items.push({
-      title: getTag('title').replace(/<[^>]+>/g, ''),
+      title: decodeEntities(getTag('title').replace(/<[^>]+>/g, '')),
       link: getTag('link'),
       pubDate: getTag('pubDate'),
-      description: getTag('description').replace(/<[^>]+>/g, '').substring(0, 200),
+      description: decodeEntities(getTag('description').replace(/<[^>]+>/g, '').substring(0, 200)),
     });
   }
   return items;
+}
+
+// Decodes the named + numeric HTML entities that RSS feeds typically emit
+// (Reuters/AP/BBC use &apos; &amp; &quot; &#39; etc. in titles).
+// `&amp;` is processed last so existing `&amp;quot;` decodes to `&quot;` rather than `"`.
+function decodeEntities(s: string): string {
+  if (!s) return s;
+  return s
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(parseInt(n, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&amp;/g, '&');
 }
 
 export async function GET() {
