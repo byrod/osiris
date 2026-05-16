@@ -49,7 +49,7 @@ export async function GET(request: Request) {
         if (countryRes.ok) {
           countryData = await countryRes.json();
         }
-      } catch { /* ignore */ }
+      } catch (e) { console.warn('[OSIRIS] Suppressed error in ' + __filename.split(/[/\\]/).pop(), e); }
     }
 
     // Step 3: Fetch Wikipedia summary
@@ -69,17 +69,18 @@ export async function GET(request: Request) {
             thumbnail: wiki.thumbnail?.source,
           };
         }
-      } catch { /* ignore */ }
+      } catch (e) { console.warn('[OSIRIS] Suppressed error in ' + __filename.split(/[/\\]/).pop(), e); }
     }
 
     // Step 4: Fetch head of state from Wikidata
     let headOfState: any = null;
     if (countryName) {
       try {
+        const safeCountryName = countryName.replace(/[\\"]/g, '\\$&');
         const sparql = `
           SELECT ?leader ?leaderLabel ?positionLabel WHERE {
             ?country wdt:P31 wd:Q6256;
-                     rdfs:label "${countryName}"@en;
+                     rdfs:label "${safeCountryName}"@en;
                      wdt:P6 ?leader.
             OPTIONAL { ?leader wdt:P39 ?position. }
             SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
@@ -102,7 +103,7 @@ export async function GET(request: Request) {
             };
           }
         }
-      } catch { /* ignore */ }
+      } catch (e) { console.warn('[OSIRIS] Suppressed error in ' + __filename.split(/[/\\]/).pop(), e); }
     }
 
     return NextResponse.json({

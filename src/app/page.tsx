@@ -1,25 +1,25 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layers, BarChart3, Newspaper, Search, Share2, Map as MapIcon, X, Globe, MapPinned, Radar, Satellite, Moon, ExternalLink, AlertTriangle } from 'lucide-react';
-import LayerPanel from '@/components/LayerPanel';
+import { Layers, BarChart3, Newspaper, Search, Share2, Map as MapIcon, X, Globe, MapPinned, Radar, Satellite, Moon, ExternalLink, AlertTriangle, Building2, RadioTower } from 'lucide-react';
 import IntelFeed from '@/components/IntelFeed';
 import MarketsPanel from '@/components/MarketsPanel';
 import SearchBar from '@/components/SearchBar';
 import ScaleBar from '@/components/ScaleBar';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import CameraViewer from '@/components/CameraViewer';
 import SharePanel from '@/components/SharePanel';
 import ViewPresets from '@/components/ViewPresets';
 import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import GlobalStatusBar from '@/components/GlobalStatusBar';
-import OsintPanel from '@/components/OsintPanel';
 import LiveAlerts from '@/components/LiveAlerts';
 
 const OsirisMap = dynamic(() => import('@/components/OsirisMap'), { ssr: false });
-
+const LayerPanel = dynamic(() => import('@/components/LayerPanel'));
+const CameraViewer = dynamic(() => import('@/components/CameraViewer'));
+const OsintPanel = dynamic(() => import('@/components/OsintPanel'));
+const CompanyIntel = dynamic(() => import('@/components/CompanyIntel'));
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -39,6 +39,18 @@ function useIsMobile() {
   }, []);
   return isMobile;
 }
+const UptimeClock = () => {
+  const [uptime, setUptime] = useState('00:00:00');
+  const startTime = useRef(Date.now());
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const e = Math.floor((Date.now() - startTime.current) / 1000);
+      setUptime(`${String(Math.floor(e/3600)).padStart(2,'0')}:${String(Math.floor((e%3600)/60)).padStart(2,'0')}:${String(e%60).padStart(2,'0')}`);
+    }, 1000);
+    return () => clearInterval(iv);
+  }, []);
+  return <span className="hidden lg:inline">UPTIME: <span className="text-[var(--gold-primary)]">{uptime}</span></span>;
+};
 
 export default function Dashboard() {
   const dataRef = useRef<any>({});
@@ -53,14 +65,13 @@ export default function Dashboard() {
   const [regionDossier, setRegionDossier] = useState<any>(null);
   const [dossierLoading, setDossierLoading] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
-  const [uptime, setUptime] = useState('00:00:00');
   const [activeCamera, setActiveCamera] = useState<any>(null);
   const [spaceWeather, setSpaceWeather] = useState<any>(null);
   const [showLayers, setShowLayers] = useState(true);
   const [showMarkets, setShowMarkets] = useState(true);
   const [showIntel, setShowIntel] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [mobilePanel, setMobilePanel] = useState<'layers'|'markets'|'intel'|'search'|'recon'|null>(null);
+  const [mobilePanel, setMobilePanel] = useState<'layers'|'markets'|'intel'|'search'|'recon'|'company'|null>(null);
   const [mapProjection, setMapProjection] = useState<'globe'|'mercator'>('globe');
   const [mapStyle, setMapStyle] = useState<'dark'|'satellite'>('dark');
 
@@ -78,27 +89,19 @@ export default function Dashboard() {
     military: false,
     maritime: false,
     satellites: false,
-    cctv: false,
-    live_news: false,
+    cctv: true,
+    live_news: true,
     earthquakes: true,
     fires: false,
     weather: false,
     infrastructure: false,
-    global_incidents: false,
+    global_incidents: true,
+    war_alerts: false,
     gps_jamming: false,
     day_night: true,
   });
   const [liveFeedUrl, setLiveFeedUrl] = useState<string | null>(null);
   const [liveFeedName, setLiveFeedName] = useState('');
-
-  // Uptime clock
-  useEffect(() => {
-    const iv = setInterval(() => {
-      const e = Math.floor((Date.now() - startTime.current) / 1000);
-      setUptime(`${String(Math.floor(e/3600)).padStart(2,'0')}:${String(Math.floor((e%3600)/60)).padStart(2,'0')}:${String(e%60).padStart(2,'0')}`);
-    }, 1000);
-    return () => clearInterval(iv);
-  }, []);
 
   // Splash screen
   useEffect(() => { setTimeout(() => setShowSplash(false), 2500); }, []);
@@ -183,7 +186,7 @@ export default function Dashboard() {
           setLocationLabel(label);
           lastGeocodedPos.current = coords;
         }
-      } catch {}
+      } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
     }, 3000); // 3s debounce (was 1.5s)
   }, []);
 
@@ -193,7 +196,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`/api/region-dossier?lat=${coords.lat}&lng=${coords.lng}`);
       if (res.ok) setRegionDossier(await res.json());
-    } catch {} finally { setDossierLoading(false); }
+    } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); } finally { setDossierLoading(false); }
   }, []);
 
   // ── PROGRESSIVE DATA LOADING (request-optimized) ──
@@ -221,7 +224,7 @@ export default function Dashboard() {
       try {
         const r = await fetch('/api/space-weather');
         if (r.ok) setSpaceWeather(await r.json());
-      } catch {}
+      } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
     }, 5000);
 
     // Polling — OPTIMIZED intervals to minimize edge requests
@@ -245,7 +248,7 @@ export default function Dashboard() {
           dataRef.current = { ...dataRef.current, ...d };
           setDataVersion(v => v + 1);
         }
-      } catch {}
+      } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
     };
 
     // Flights
@@ -267,7 +270,7 @@ export default function Dashboard() {
     }
     // CCTV
     if (activeLayers.cctv && !layerFetchedRef.current.has('cctv')) {
-      fetchEndpoint('/api/cctv?region=uk');
+      fetchEndpoint('/api/cctv?region=all');
       layerFetchedRef.current.add('cctv');
     }
     // Maritime
@@ -295,6 +298,11 @@ export default function Dashboard() {
       fetchEndpoint('/api/gdelt', d => ({ gdelt: d.events }));
       layerFetchedRef.current.add('gdelt');
     }
+    // War Alerts (Global Conflicts)
+    if (activeLayers.war_alerts && !layerFetchedRef.current.has('war_alerts')) {
+      fetchEndpoint('/api/war-simulator', d => ({ war_alerts: d.alerts }));
+      layerFetchedRef.current.add('war_alerts');
+    }
   }, [activeLayers]);
 
   // ── LAYER-AWARE POLLING — only poll data for active layers ──
@@ -308,28 +316,35 @@ export default function Dashboard() {
           dataRef.current = { ...dataRef.current, ...d };
           setDataVersion(v => v + 1);
         }
-      } catch {}
+      } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
     };
 
     const intervals: ReturnType<typeof setInterval>[] = [];
     if (activeLayers.flights || activeLayers.military || activeLayers.jets || activeLayers.private) {
       intervals.push(setInterval(() => fetchEndpoint('/api/flights'), 300000)); // 5 min (was 2 min)
     }
+    if (activeLayers.war_alerts) {
+      intervals.push(setInterval(() => fetchEndpoint('/api/war-simulator', d => ({ war_alerts: d.alerts })), 60000)); // 1 min
+    }
     // Fires: no polling needed (data changes very slowly, initial fetch is enough)
     return () => intervals.forEach(clearInterval);
-  }, [activeLayers.flights, activeLayers.military, activeLayers.jets, activeLayers.private]);
+  }, [activeLayers.flights, activeLayers.military, activeLayers.jets, activeLayers.private, activeLayers.war_alerts]);
 
   // CCTV: loaded once on layer toggle via layerFetchedRef (no viewport polling)
 
   // Reactive layer fetch: handled by layerFetchedRef above (no duplicate)
 
-  const totalFlights = (data.commercial_flights?.length||0)+(data.private_flights?.length||0)+(data.private_jets?.length||0)+(data.military_flights?.length||0);
+  const totalFlights = useMemo(() => (
+    (data.commercial_flights?.length||0)+(data.private_flights?.length||0)+(data.private_jets?.length||0)+(data.military_flights?.length||0)
+  ), [data.commercial_flights, data.private_flights, data.private_jets, data.military_flights]);
 
   // Dynamic Threat Level based on active global incidents
-  const threatScore = (data.earthquakes?.filter((e: any) => e.magnitude >= 5).length || 0)
+  const threatScore = useMemo(() => (
+    (data.earthquakes?.filter((e: any) => e.magnitude >= 5).length || 0)
     + (data.weather_events?.filter((w: any) => w.severity === 'high').length || 0) * 2
     + (data.gdelt?.length || 0) * 0.1
-    + (data.fires?.length || 0) * 0.01;
+    + (data.fires?.length || 0) * 0.01
+  ), [data.earthquakes, data.weather_events, data.gdelt, data.fires]);
   const threatLevel = threatScore >= 10 ? 'CRITICAL' : threatScore >= 5 ? 'HIGH' : threatScore >= 2 ? 'ELEVATED' : 'NOMINAL';
   const threatColor = threatLevel === 'CRITICAL' ? '#FF1744' : threatLevel === 'HIGH' ? '#FF9500' : threatLevel === 'ELEVATED' ? '#FFD700' : '#00E676';
 
@@ -352,10 +367,20 @@ export default function Dashboard() {
 
       {/* ── MAP ── */}
       <ErrorBoundary name="Map">
-        <OsirisMap data={data} activeLayers={activeLayers} projection={mapProjection} mapStyle={mapStyle === 'satellite' ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' : 'dark'} onEntityClick={(entity) => {
-          if (entity?.type === 'cctv') setActiveCamera(entity);
-          if (entity?.type === 'live_news' && entity.url) { setLiveFeedUrl(entity.url); setLiveFeedName(entity.name); }
-        }} onMouseCoords={handleMouseCoords} onRightClick={handleRightClick} onViewStateChange={setMapView} flyToLocation={flyToLocation} />
+        <OsirisMap 
+          data={data} 
+          activeLayers={activeLayers} 
+          projection={mapProjection} 
+          mapStyle={mapStyle === 'satellite' ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' : 'dark'} 
+          onEntityClick={useCallback((entity: any) => {
+            if (entity?.type === 'cctv') setActiveCamera(entity);
+            if (entity?.type === 'live_news' && entity.url) { setLiveFeedUrl(entity.url); setLiveFeedName(entity.name); }
+          }, [])} 
+          onMouseCoords={handleMouseCoords} 
+          onRightClick={handleRightClick} 
+          onViewStateChange={setMapView} 
+          flyToLocation={flyToLocation} 
+        />
       </ErrorBoundary>
 
       {/* ── MAP VIEW CONTROLS (3D/2D + SATELLITE TOGGLE) ── */}
@@ -420,7 +445,7 @@ export default function Dashboard() {
           </span>
         </span>
         {spaceWeather && <span className="hidden lg:inline">SOLAR: <span style={{ color: spaceWeather.storm_color, fontWeight: 700 }}>Kp{spaceWeather.kp_index}</span></span>}
-        <span className="hidden lg:inline">UPTIME: <span className="text-[var(--gold-primary)]">{uptime}</span></span>
+        <UptimeClock />
         <span>V4.1</span>
       </motion.div>
 
@@ -464,6 +489,7 @@ export default function Dashboard() {
           <div className="relative"><SharePanel mapView={mapView} activeLayers={activeLayers} mouseCoords={mouseCoords} /></div>
         </div>
         <OsintPanel />
+        <CompanyIntel />
         <LiveAlerts data={data} onLocate={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })} onWatchFeed={(url, name) => { setLiveFeedUrl(url); setLiveFeedName(name); }} />
       </div>
 
@@ -545,6 +571,7 @@ export default function Dashboard() {
                 { id: 'markets' as const, icon: BarChart3, label: 'MARKETS' },
                 { id: 'intel' as const, icon: Newspaper, label: 'INTEL' },
                 { id: 'recon' as const, icon: Radar, label: 'RECON' },
+                { id: 'company' as const, icon: Building2, label: 'INTEL DB' },
                 { id: 'search' as const, icon: Search, label: 'SEARCH' },
               ].map(tab => (
                 <button key={tab.id} onClick={() => setMobilePanel(mobilePanel === tab.id ? null : tab.id)}
@@ -569,7 +596,7 @@ export default function Dashboard() {
                 <div className="px-3 pb-3">
                   <div className="flex items-center justify-between mb-2">
                     <span className="hud-text text-[9px] text-[var(--text-primary)]">
-                      {mobilePanel === 'layers' ? 'LAYERS & STATS' : mobilePanel === 'markets' ? 'MARKETS & INTEL' : mobilePanel === 'intel' ? 'INTEL FEED' : mobilePanel === 'recon' ? 'OSIRIS RECON' : 'SEARCH'}
+                      {mobilePanel === 'layers' ? 'LAYERS & STATS' : mobilePanel === 'markets' ? 'MARKETS & INTEL' : mobilePanel === 'intel' ? 'INTEL FEED' : mobilePanel === 'recon' ? 'OSIRIS RECON' : mobilePanel === 'company' ? 'COMPANY INTEL' : 'SEARCH'}
                     </span>
                     <button onClick={() => setMobilePanel(null)} className="text-[var(--text-muted)] p-1"><X className="w-4 h-4" /></button>
                   </div>
@@ -601,6 +628,11 @@ export default function Dashboard() {
                   {mobilePanel === 'recon' && (
                     <div className="space-y-2">
                       <OsintPanel isOpen={true} onClose={() => setMobilePanel(null)} isMobile={true} />
+                    </div>
+                  )}
+                  {mobilePanel === 'company' && (
+                    <div className="space-y-2">
+                      <CompanyIntel isMobile={true} />
                     </div>
                   )}
                 </div>

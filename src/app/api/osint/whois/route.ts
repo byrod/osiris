@@ -44,7 +44,7 @@ export async function GET(req: Request) {
         results.expiration = events.find((e: any) => e.action === 'expiration')?.date;
         results.last_changed = events.find((e: any) => e.action === 'last changed')?.date;
       }
-    } catch {}
+    } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
 
     // HTTP headers for tech fingerprinting
     try {
@@ -75,7 +75,7 @@ export async function GET(req: Request) {
       if (headers['x-content-type-options']) score += 1;
       if (headers['referrer-policy']) score += 1;
       results.security_score = { score, max: 7, grade: score >= 5 ? 'A' : score >= 3 ? 'B' : score >= 1 ? 'C' : 'F' };
-    } catch {}
+    } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
 
     return NextResponse.json(results);
   } catch {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, memo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -38,7 +38,7 @@ function computeSolarTerminator(): [number, number][] {
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 
-export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark' }: OsirisMapProps) {
+function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark' }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -87,7 +87,7 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
       container: containerRef.current,
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
       center: [20, 20], zoom: 2.5, minZoom: 1.5, maxZoom: 18,
-      attributionControl: false, antialias: true,
+      attributionControl: false,
       maxPitch: 85,
     });
 
@@ -107,7 +107,7 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
       createDot(map, 'dot-cctv', '#39FF14', 10);
 
       // Sources
-      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','gps-jamming','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','live-news','conflict-zones'];
+      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','gps-jamming','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines'];
       sources.forEach(s => map.addSource(s, { type: 'geojson', data: EMPTY_FC }));
 
       // ── CONFLICT ZONES — small warning markers (not polygons) ──
@@ -178,6 +178,50 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
         'text-color': ['match', ['get','severity'], 'war','#FF1744', 'high','#FF9500', '#FFD500'],
         'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.9,
       }});
+
+      // ── WAR SIMULATOR LAYERS ──
+      // Trajectory lines
+      map.addLayer({
+        id: 'war-alerts-lines',
+        type: 'line',
+        source: 'war-alerts-lines',
+        paint: {
+          'line-color': '#FF1744',
+          'line-width': 2,
+          'line-dasharray': [2, 4],
+          'line-opacity': 0.6
+        }
+      });
+      
+      // Impact target circles (expanding pulse effect simulated by changing radius via react state)
+      map.addLayer({
+        id: 'war-alerts-targets-glow',
+        type: 'circle',
+        source: 'war-alerts-targets',
+        paint: {
+          'circle-radius': 40,
+          'circle-color': '#FF1744',
+          'circle-opacity': 0.15,
+          'circle-blur': 0.5
+        }
+      });
+      
+      map.addLayer({
+        id: 'war-alerts-targets',
+        type: 'circle',
+        source: 'war-alerts-targets',
+        paint: {
+          'circle-radius': 8,
+          'circle-color': '#FF1744',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff',
+          'circle-opacity': 0.9
+        }
+      });
+      
+      map.addLayer({ id: 'war-alerts-label', type: 'symbol', source: 'war-alerts-targets', layout: {
+        'text-field': ['get', 'city'], 'text-size': 11, 'text-font': ['Open Sans Bold'], 'text-offset': [0, 1.8],
+      }, paint: { 'text-color': '#FF1744', 'text-halo-color': '#000', 'text-halo-width': 1.5 }});
 
       // Day/Night
       map.addLayer({ id: 'day-night-fill', type: 'fill', source: 'day-night', paint: { 'fill-color': '#000022', 'fill-opacity': 0.35 }});
@@ -329,7 +373,14 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
     });
 
     // Events
-    map.on('mousemove', e => onMouseCoords?.({ lat: e.lngLat.lat, lng: e.lngLat.lng }));
+    let lastMove = 0;
+    map.on('mousemove', e => {
+      const now = Date.now();
+      if (now - lastMove > 100) {
+        lastMove = now;
+        onMouseCoords?.({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+      }
+    });
     map.on('contextmenu', e => { e.preventDefault(); onRightClick?.({ lat: e.lngLat.lat, lng: e.lngLat.lng }); });
     map.on('moveend', () => { const c = map.getCenter(); onViewStateChange?.({ zoom: map.getZoom(), latitude: c.lat }); });
 
@@ -455,8 +506,48 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
       </div>`);
     });
 
-    // Cursor handlers for all clickable layers
-    ['cctv-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots'].forEach(layer => {
+    // ── Global Event / Conflict Markers ──
+    map.on('click', 'conflict-icons', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const coords = (e.features[0].geometry as any).coordinates;
+      const color = p.severity === 'war' ? '#FF1744' : p.severity === 'high' ? '#FF9500' : '#FFD500';
+      popup(coords, `<div style="${pStyle}border:1px solid ${color}40;">
+        <div style="color:${color};font-size:12px;font-weight:700;margin-bottom:6px;">⚠️ ${p.label || 'WARNING EVENT'}</div>
+        <div style="font-size:10px;color:#E8E6E0;margin-bottom:8px;line-height:1.4;">${p.description || 'Global event detected at this location.'}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:9px;margin-bottom:8px;">
+          <div><span style="color:#5C5A54;">SEVERITY</span><br/><span style="color:${color};">${(p.severity||'unknown').toUpperCase()}</span></div>
+          <div><span style="color:#5C5A54;">COORDS</span><br/><span style="color:#E8E6E0;">${coords[1].toFixed(3)}°, ${coords[0].toFixed(3)}°</span></div>
+        </div>
+      </div>`);
+    });
+
+    // ── War Alerts ──
+    map.on('click', 'war-alerts-targets', e => {
+      if (!e.features?.length) return;
+      const p = e.features[0].properties as any;
+      const coords = (e.features[0].geometry as any).coordinates;
+      popup(coords, `<div style="${pStyle}border:1px solid rgba(255,23,68,0.3);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <span style="color:#FF1744;font-size:16px;font-weight:700;letter-spacing:0.1em;">${p.city}</span>
+          <span style="color:#FF1744;font-size:10px;">${p.type}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr;gap:8px;font-size:11px;">
+          <div><span style="color:#5C5A54;font-size:9px;">ORIGIN</span><br/><span style="color:#E8E6E0;">${p.originName || 'UNKNOWN'}</span></div>
+          <div><span style="color:#5C5A54;font-size:9px;">THREAT LEVEL</span><br/><span style="color:#FF1744;font-weight:bold;">${p.threatLevel}</span></div>
+          <div><span style="color:#5C5A54;font-size:9px;">STATUS</span><br/><span style="color:#00E5FF;">${p.status}</span></div>
+        </div>
+        ${p.sourceUrl ? `
+        <div style="margin-top:12px;">
+          <a href="${p.sourceUrl}" target="_blank" style="${linkStyle}color:#FF1744;border:1px solid rgba(255,23,68,0.4);background:rgba(255,23,68,0.1);">📰 VERIFY SOURCE</a>
+        </div>
+        ` : ''}
+      </div>`);
+      onEntityClick?.(p);
+    });
+
+    // ── Generic hover for clickables ──
+    ['conflict-icons','cctv-dots','eq-circles','sat-dots','fires-heat','gdelt-dots','weather-dots','infra-dots','maritime-dots','choke-dots','news-dots','war-alerts-targets'].forEach(layer => {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     });
@@ -587,21 +678,61 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
     setGeo('military', activeLayers.military ? toFeatures(data.military_flights) : []);
   }, [mapReady, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military]);
 
-  // Other layers
+  // ── DECOUPLED LAYER RENDERERS (Performance Optimized) ──
+
   useEffect(() => {
     if (!mapReady) return;
     setGeo('earthquakes', activeLayers.earthquakes && data.earthquakes ? data.earthquakes.map((eq: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [eq.lng, eq.lat] }, properties: { magnitude: eq.magnitude, place: eq.place } })) : []);
+  }, [mapReady, data.earthquakes, activeLayers.earthquakes, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
     setGeo('satellites', activeLayers.satellites && data.satellites ? data.satellites.map((s: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { name: s.name, color: s.color, mission: s.mission } })) : []);
+  }, [mapReady, data.satellites, activeLayers.satellites, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
     setGeo('gdelt', activeLayers.global_incidents && data.gdelt ? data.gdelt.map((e: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [e.lng, e.lat] }, properties: { name: e.name } })) : []);
+  }, [mapReady, data.gdelt, activeLayers.global_incidents, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
     setGeo('gps-jamming', activeLayers.gps_jamming && data.gps_jamming ? data.gps_jamming.map((z: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [z.lng, z.lat] }, properties: { severity: z.severity } })) : []);
+  }, [mapReady, data.gps_jamming, activeLayers.gps_jamming, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
     setGeo('cctv', activeLayers.cctv && data.cameras ? data.cameras.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { name: c.name, city: c.city, country: c.country, source: c.source, feed_url: c.feed_url } })) : []);
+  }, [mapReady, data.cameras, activeLayers.cctv, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
     setGeo('fires', activeLayers.fires && data.fires ? data.fires.map((f: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [f.lng, f.lat] }, properties: { brightness: f.brightness } })) : []);
+  }, [mapReady, data.fires, activeLayers.fires, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
     setGeo('weather', activeLayers.weather && data.weather_events ? data.weather_events.map((w: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [w.lng, w.lat] }, properties: { title: w.title, type: w.type, icon: w.icon, severity: w.severity, source: w.source, id: w.id } })) : []);
+  }, [mapReady, data.weather_events, activeLayers.weather, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
     setGeo('infrastructure', activeLayers.infrastructure && data.infrastructure ? data.infrastructure.map((i: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [i.lng, i.lat] }, properties: { name: i.name, city: i.city, country: i.country, status: i.status, reactors: i.reactors, capacityMW: i.capacityMW, owner: i.owner } })) : []);
+  }, [mapReady, data.infrastructure, activeLayers.infrastructure, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
     setGeo('maritime', activeLayers.maritime && data.maritime_ports ? data.maritime_ports.map((p: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { name: p.name, country: p.country, type: p.type, volume: p.volume, fleet: p.fleet, rank: p.rank } })) : []);
     setGeo('maritime-choke', activeLayers.maritime && data.maritime_chokepoints ? data.maritime_chokepoints.map((c: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [c.lng, c.lat] }, properties: { name: c.name, traffic: c.traffic, risk: c.risk } })) : []);
-    setGeo('live-news', activeLayers.live_news && data.live_feeds ? data.live_feeds.map((f: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [f.lng, f.lat] }, properties: { name: f.name, city: f.city, country: f.country, url: f.url, category: f.category } })) : []);
+  }, [mapReady, data.maritime_ports, data.maritime_chokepoints, activeLayers.maritime, setGeo]);
 
+  useEffect(() => {
+    if (!mapReady) return;
+    setGeo('live-news', activeLayers.live_news && data.live_feeds ? data.live_feeds.map((f: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [f.lng, f.lat] }, properties: { name: f.name, city: f.city, country: f.country, url: f.url, category: f.category } })) : []);
+  }, [mapReady, data.live_feeds, activeLayers.live_news, setGeo]);
+
+  useEffect(() => {
+    if (!mapReady) return;
     // ── CONFLICT ZONES — center-point warning markers ──
     const CONFLICT_ZONES = [
       { label: 'UKRAINE WAR', severity: 'war', lat: 48.5, lng: 31.2 },
@@ -624,7 +755,28 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
       properties: { label: z.label, severity: z.severity },
     }));
     setGeo('conflict-zones', conflictFeatures);
-  }, [mapReady, data, activeLayers]);
+  }, [mapReady, setGeo]);
+
+  // ── WAR SIMULATOR DATA SYNC ──
+  useEffect(() => {
+    if (!mapReady) return;
+    const alerts = data.war_alerts || [];
+    
+    const targetFeatures = alerts.map((a: any) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: a.target },
+      properties: { city: a.city, type: a.type, originName: a.originName, threatLevel: a.threatLevel, status: a.status, sourceUrl: a.sourceUrl }
+    }));
+
+    const lineFeatures = alerts.map((a: any) => ({
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: [a.origin, a.target] },
+      properties: {}
+    }));
+
+    setGeo('war-alerts-targets', activeLayers.war_alerts ? targetFeatures : []);
+    setGeo('war-alerts-lines', activeLayers.war_alerts ? lineFeatures : []);
+  }, [mapReady, data.war_alerts, activeLayers.war_alerts, setGeo]);
 
   // Visibility
   useEffect(() => {
@@ -645,7 +797,9 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
     setVis(['maritime-glow','maritime-dots','maritime-label'], activeLayers.maritime);
     setVis(['choke-glow','choke-dots','choke-label'], activeLayers.maritime);
     setVis(['news-glow','news-dots','news-label'], activeLayers.live_news);
-  }, [mapReady, activeLayers]);
+    setVis(['conflict-icons'], activeLayers.conflict_zones !== false);
+    setVis(['war-alerts-targets-glow','war-alerts-targets','war-alerts-label','war-alerts-lines'], !!activeLayers.war_alerts);
+  }, [mapReady, activeLayers, setVis]);
 
   // Fly-to
   useEffect(() => {
@@ -670,7 +824,7 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
             'fog-color': '#04040A',
             'fog-ground-blend': 0.9,
           });
-        } catch {}
+        } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
       } else {
         map.easeTo({ pitch: 0, duration: 800 });
       }
@@ -712,3 +866,5 @@ export default function OsirisMap({ data, activeLayers, onEntityClick, onMouseCo
 
   return <div ref={containerRef} className="absolute inset-0 w-full h-full" />;
 }
+
+export default memo(OsirisMap);

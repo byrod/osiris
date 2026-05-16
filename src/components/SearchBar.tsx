@@ -18,7 +18,7 @@ export default function SearchBar({ onLocate }: SearchBarProps) {
   const [results, setResults] = useState<{ label: string; lat: number; lng: number }[]>([]);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (open) inputRef.current?.focus();
@@ -39,7 +39,7 @@ export default function SearchBar({ onLocate }: SearchBarProps) {
       setResults([{ label: `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`, ...coords }]);
       return;
     }
-    clearTimeout(timerRef.current);
+    if (timerRef.current) clearTimeout(timerRef.current);
     if (q.trim().length < 2) { setResults([]); return; }
     timerRef.current = setTimeout(async () => {
       setLoading(true);

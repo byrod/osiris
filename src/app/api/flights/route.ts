@@ -123,8 +123,37 @@ function classifyFlight(f: any) {
   };
 }
 
+// In-memory cache to prevent global fan-out abuse
+let cachedData: any = null;
+let lastFetchTime = 0;
+const CACHE_TTL = 45000; // 45 seconds cache window
+let fetchPromise: Promise<any> | null = null;
+
 export async function GET() {
-  try {
+  const now = Date.now();
+
+  // Return cached data if within TTL
+  if (cachedData && now - lastFetchTime < CACHE_TTL) {
+    return NextResponse.json(cachedData, {
+      headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' },
+    });
+  }
+
+  // Coalesce concurrent requests: wait for the active fetch rather than starting a new one
+  if (fetchPromise) {
+    try {
+      const data = await fetchPromise;
+      return NextResponse.json(data, {
+        headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' },
+      });
+    } catch {
+      // Fallback to error if the pending fetch failed
+      return NextResponse.json({ error: 'Failed to fetch flight data' }, { status: 500 });
+    }
+  }
+
+  // Start new global fetch
+  fetchPromise = (async () => {
     // Fetch all 6 regions in parallel
     const regionResults = await Promise.allSettled(
       REGIONS.map(r => fetchRegion(r))
@@ -177,7 +206,7 @@ export async function GET() {
     // Aggregate GPS jamming zones (grid-based)
     const jammingZones = aggregateJamming(gpsJamming);
 
-    return NextResponse.json({
+    return {
       commercial_flights: commercial,
       private_flights: privateFl,
       private_jets: jets,
@@ -185,13 +214,23 @@ export async function GET() {
       gps_jamming: jammingZones,
       total: allRaw.length,
       timestamp: new Date().toISOString(),
-    }, {
+    };
+  })();
+
+  try {
+    const data = await fetchPromise;
+    cachedData = data;
+    lastFetchTime = Date.now();
+    fetchPromise = null;
+
+    return NextResponse.json(data, {
       headers: {
         'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
       },
     });
   } catch (error) {
     console.error('Flight fetch error:', error);
+    fetchPromise = null;
     return NextResponse.json(
       { error: 'Failed to fetch flight data' },
       { status: 500 }

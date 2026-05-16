@@ -33,7 +33,7 @@ export async function GET(req: Request) {
           }));
         }
       }
-    } catch {}
+    } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
 
     // 2. Check specific IP/domain if provided
     if (query) {
@@ -67,7 +67,7 @@ export async function GET(req: Request) {
               asn: data.asn,
             };
           }
-        } catch {}
+        } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
       } else {
         // Domain check
         try {
@@ -85,7 +85,7 @@ export async function GET(req: Request) {
               } : null,
             };
           }
-        } catch {}
+        } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
       }
     }
 

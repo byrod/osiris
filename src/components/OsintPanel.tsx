@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Radar, Globe, Shield, FileText, Radio,
@@ -19,14 +19,13 @@ const TABS = [
   { id: 'threats', label: 'THREATS', icon: AlertTriangle, placeholder: 'IP, domain, or hash', color: '#FF9500' },
   { id: 'headers', label: 'HEADERS', icon: Code, placeholder: 'URL to inspect', color: '#87CEEB' },
   { id: 'ssl', label: 'SSL/TLS', icon: Shield, placeholder: 'Domain name', color: '#76FF03' },
-  { id: 'traceroute', label: 'TRACE', icon: Network, placeholder: 'IP or hostname', color: '#FF69B4' },
   { id: 'subdomains', label: 'SUBDOMAINS', icon: Layers, placeholder: 'Domain to enumerate', color: '#00BCD4' },
   { id: 'tech', label: 'TECH DETECT', icon: Fingerprint, placeholder: 'URL to fingerprint', color: '#9C27B0' },
 ];
 
 interface OsintPanelProps { isOpen?: boolean; onClose?: () => void; isMobile?: boolean; }
 
-export default function OsintPanel({ isMobile }: OsintPanelProps) {
+function OsintPanelInner({ isMobile }: OsintPanelProps) {
   const [activeTab, setActiveTab] = useState('scanner');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any>(null);
@@ -51,7 +50,6 @@ export default function OsintPanel({ isMobile }: OsintPanelProps) {
         case 'vuln': url = `/api/scanner?target=${encodeURIComponent(query)}&type=vuln`; break;
         case 'headers': url = `/api/scanner?target=${encodeURIComponent(query)}&type=headers`; break;
         case 'ssl': url = `/api/scanner?target=${encodeURIComponent(query)}&type=ssl`; break;
-        case 'traceroute': url = `/api/scanner?target=${encodeURIComponent(query)}&type=traceroute`; break;
         case 'subdomains': url = `/api/scanner?target=${encodeURIComponent(query)}&type=subdomains`; break;
         case 'tech': url = `/api/scanner?target=${encodeURIComponent(query)}&type=tech`; break;
       }
@@ -410,3 +408,6 @@ export default function OsintPanel({ isMobile }: OsintPanelProps) {
     </motion.div>
   );
 }
+
+const OsintPanel = memo(OsintPanelInner);
+export default OsintPanel;

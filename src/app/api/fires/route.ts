@@ -35,7 +35,7 @@ export async function GET() {
         }).filter(Boolean);
         source = 'NASA-EONET';
       }
-    } catch {}
+    } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
 
     // Source 2: If EONET returned few results, try NASA FIRMS CSV endpoints
     if (fires.length < 20) {
@@ -93,7 +93,7 @@ export async function GET() {
           fires = [...fires, ...volcanoes];
           if (!source) source = 'NASA-EONET';
         }
-      } catch {}
+      } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
     }
 
     return NextResponse.json({
