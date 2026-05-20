@@ -66,7 +66,7 @@ export default function LayerPanel({ data, activeLayers, setActiveLayers, loadin
           return (
             <button key={layer.key} onClick={() => toggle(layer.key)} className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-all duration-200 ${isActive ? 'bg-[var(--hover-accent)] border border-[var(--border-primary)]' : 'border border-transparent hover:bg-[var(--hover-accent)]'}`}>
               <Icon className="w-4 h-4 flex-shrink-0" style={{ color: isActive ? layer.color : 'var(--text-muted)' }} />
-              <span className={`text-[12px] font-mono tracking-wider flex-1 text-left ${isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>{layer.label}</span>
+              <span className={`text-[12px] font-mono tracking-normal flex-1 text-left whitespace-nowrap ${isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>{layer.label}</span>
               {count !== null && <span className="text-[10px] font-mono tabular-nums" style={{ color: isActive ? layer.color : 'var(--text-muted)' }}>{count.toLocaleString()}</span>}
               <div className={`layer-toggle ${isActive ? 'active' : ''} ${isLoading ? 'animate-osiris-pulse' : ''}`} />
             </button>
